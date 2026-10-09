@@ -196,7 +196,6 @@ function App() {
         return
       }
       setApplication(data.application)
-      setLeads((current) => [data.application as Lead, ...current.filter((lead) => lead.id !== data.application.id)])
       setStep(3)
     } catch {
       setError('Could not reach the server. Please try again.')
