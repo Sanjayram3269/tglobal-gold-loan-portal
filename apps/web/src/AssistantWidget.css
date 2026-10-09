@@ -326,3 +326,80 @@
     min-height: min(320px, calc(100dvh - 100px));
   }
 }
+
+
+/* Mobile assistant: compact bottom sheet, with a visible page behind it. */
+@media (max-width: 480px) {
+  .tga-widget {
+    right: 12px;
+    bottom: 12px;
+  }
+
+  .tga-panel {
+    position: fixed;
+    inset: auto 12px 76px 12px;
+    width: auto;
+    height: min(520px, calc(100dvh - 180px));
+    min-height: min(340px, calc(100dvh - 220px));
+    max-height: calc(100dvh - 140px);
+    border-radius: 18px;
+  }
+
+  .tga-header {
+    flex-shrink: 0;
+    padding: 13px 15px;
+    gap: 10px;
+  }
+
+  .tga-avatar {
+    width: 36px;
+    height: 36px;
+    font-size: 21px;
+  }
+
+  .tga-heading strong { font-size: 14px; }
+  .tga-heading span { font-size: 11px; }
+
+  .tga-messages {
+    min-height: 0;
+    padding: 12px;
+    gap: 10px;
+  }
+
+  .tga-message {
+    max-width: 100%;
+    padding: 10px 12px;
+    font-size: 14px;
+    line-height: 1.55;
+  }
+
+  .tga-composer {
+    flex-shrink: 0;
+    padding: 10px;
+    gap: 7px;
+  }
+
+  .tga-composer input {
+    padding: 11px;
+    font-size: 16px;
+  }
+
+  .tga-composer button {
+    flex: 0 0 42px;
+    width: 42px;
+  }
+
+  .tga-disclaimer {
+    flex-shrink: 0;
+    padding: 0 10px 9px;
+    font-size: 10px;
+    line-height: 1.4;
+  }
+
+  .tga-review { padding: 12px; }
+  .tga-review h3 { margin: 7px 0 10px; font-size: 16px; }
+  .tga-review-row, .tga-review-amount { padding: 6px 0; font-size: 12px; }
+  .tga-review-amount strong { font-size: 21px; }
+  .tga-review p { font-size: 11px; }
+  .tga-confirm, .tga-edit { min-height: 40px; font-size: 13px; }
+}
