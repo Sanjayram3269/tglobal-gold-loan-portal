@@ -14,25 +14,6 @@ export interface LoanScheme {
   repaymentType: "BULLET" | "EMI";
 }
 
-export const LOAN_SCHEMES: LoanScheme[] = [
-  {
-    id: "PLAN_BULLET_01",
-    name: "Bullet Repayment",
-    interestRatePercent: "12.0",
-    maxLtv: "0.70",
-    tenureMonths: 12,
-    repaymentType: "BULLET",
-  },
-  {
-    id: "PLAN_EMI_01",
-    name: "Monthly EMI",
-    interestRatePercent: "10.5",
-    maxLtv: "0.75",
-    tenureMonths: 12,
-    repaymentType: "EMI",
-  },
-];
-
 export interface QuoteInput {
   netWeightGrams: number | string;
   grossWeightGrams: number | string;
@@ -70,24 +51,23 @@ export class QuoteValidationError extends Error {
 function decimalInput(value: number | string, field: string): Decimal {
   try {
     const result = new Decimal(value);
-
-    if (!result.isFinite()) {
-      throw new Error("Non-finite number");
-    }
-
+    if (!result.isFinite()) throw new Error("Non-finite number");
     return result;
   } catch {
     throw new QuoteValidationError(`Invalid ${field}`, field);
   }
 }
 
-export function calculateQuote(input: QuoteInput): LoanQuote {
+export function calculateQuote(
+  input: QuoteInput,
+  scheme: LoanScheme,
+): LoanQuote {
   const net = decimalInput(input.netWeightGrams, "netWeightGrams");
   const gross = decimalInput(input.grossWeightGrams, "grossWeightGrams");
 
-  if (net.lte(0)) {
+  if (net.lte(0) || net.gt(1000)) {
     throw new QuoteValidationError(
-      "Net weight must be greater than zero",
+      "Net weight must be greater than zero and at most 1000 grams",
       "netWeightGrams",
     );
   }
@@ -107,29 +87,30 @@ export function calculateQuote(input: QuoteInput): LoanQuote {
   }
 
   if (![18, 22, 24].includes(input.karat)) {
-    throw new QuoteValidationError(
-      "Karat must be 18, 22, or 24",
-      "karat",
-    );
+    throw new QuoteValidationError("Karat must be 18, 22, or 24", "karat");
   }
 
-  const scheme = LOAN_SCHEMES.find((item) => item.id === input.schemeId);
+  if (
+    !Number.isFinite(scheme.tenureMonths) ||
+    scheme.tenureMonths <= 0 ||
+    !["BULLET", "EMI"].includes(scheme.repaymentType)
+  ) {
+    throw new Error("Invalid loan scheme configuration");
+  }
 
-  if (!scheme) {
-    throw new QuoteValidationError(
-      "Loan scheme not found",
-      "schemeId",
-      404,
-    );
+  const schemeLtv = decimalInput(scheme.maxLtv, "maxLtv");
+  const interestRate = decimalInput(
+    scheme.interestRatePercent,
+    "interestRatePercent",
+  );
+
+  if (schemeLtv.lte(0) || schemeLtv.gt(1) || interestRate.lt(0)) {
+    throw new Error("Invalid loan scheme configuration");
   }
 
   const pureGoldGrams = net.mul(input.karat).div(24);
   const goldValue = pureGoldGrams.mul(MOCK_GOLD_RATE_PER_GRAM);
-
-  const schemeLtv = new Decimal(scheme.maxLtv);
   const effectiveLtv = Decimal.min(schemeLtv, MAX_LTV);
-
-  // Eligible loan is rounded down to a whole rupee.
   const eligibleLoan = goldValue.mul(effectiveLtv).floor();
 
   return {
@@ -143,10 +124,8 @@ export function calculateQuote(input: QuoteInput): LoanQuote {
     goldValueRupees: goldValue.toNumber(),
     ltvPercent: effectiveLtv.mul(100).toNumber(),
     eligibleLoanRupees: eligibleLoan.toNumber(),
-    interestRatePercent: scheme.interestRatePercent,
+    interestRatePercent: interestRate.toString(),
     tenureMonths: scheme.tenureMonths,
     repaymentType: scheme.repaymentType,
   };
 }
-
-

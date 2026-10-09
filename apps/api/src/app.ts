@@ -1,13 +1,15 @@
-import express, { type NextFunction, type Request, type Response } from "express";
+import { confirmApplication } from "./services/assistant-confirmation.js";
+import { runGroqAssistant } from "./services/groq-assistant.js";
+﻿import express, { type NextFunction, type Request, type Response } from "express";
 import cors from "cors";
 import helmet from "helmet";
 import { z } from "zod";
 import { prisma } from "./lib/prisma.js";
 import {
   calculateQuote,
-  LOAN_SCHEMES,
   QuoteValidationError,
   type Karat,
+  type LoanScheme,
 } from "./domain/loan-calculator.js";
 
 const app = express();
@@ -37,12 +39,50 @@ const applicationSchema = z.object({
   }
 });
 
+
+const quoteSchema = z.object({
+  netWeightGrams: z.coerce.number().finite().gt(0).max(1000),
+  grossWeightGrams: z.coerce.number().finite().gt(0).max(1000),
+  karat: z.union([z.literal(18), z.literal(22), z.literal(24)]),
+  schemeId: z.string().min(1),
+}).strict().superRefine((data, ctx) => {
+  if (data.netWeightGrams > data.grossWeightGrams) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["netWeightGrams"],
+      message: "Net weight cannot exceed gross weight",
+    });
+  }
+});
 type ApplicationInput = z.infer<typeof applicationSchema>;
 
 function maskMobile(mobile: string): string {
   return `${mobile.slice(0, 4)}XXXX${mobile.slice(-2)}`;
 }
 
+
+
+function toCalculatorScheme(scheme: {
+  id: string;
+  name: string;
+  interestRatePercent: { toString(): string };
+  maxLtv: { toString(): string };
+  tenureMonths: number;
+  repaymentType: string;
+}): LoanScheme {
+  if (scheme.repaymentType !== "BULLET" && scheme.repaymentType !== "EMI") {
+    throw new Error("Invalid repayment type configured for loan scheme");
+  }
+
+  return {
+    id: scheme.id,
+    name: scheme.name,
+    interestRatePercent: scheme.interestRatePercent.toString(),
+    maxLtv: scheme.maxLtv.toString(),
+    tenureMonths: scheme.tenureMonths,
+    repaymentType: scheme.repaymentType,
+  };
+}
 function validateBody<T>(schema: z.ZodType<T>, body: unknown) {
   const result = schema.safeParse(body);
 
@@ -64,6 +104,87 @@ function validationResponse(res: Response, errors: unknown[]) {
     details: errors,
   });
 }
+
+
+const assistantChatSchema = z.object({
+  message: z.string().trim().min(1).max(4000),
+  history: z.array(z.object({
+    role: z.enum(["user", "model"]),
+    text: z.string().max(4000),
+  }).strict()).max(12).optional(),
+}).strict();
+
+const assistantConfirmSchema = z.object({
+  confirmationToken: z.string().uuid(),
+  confirmed: z.literal(true),
+}).strict();
+
+app.post("/api/v1/assistant/chat", async (req, res, next) => {
+  const parsed = assistantChatSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: "VALIDATION_ERROR",
+      message: "Provide a message and valid conversation history.",
+    });
+  }
+
+  try {
+    const result = await runGroqAssistant(
+      parsed.data.message,
+      parsed.data.history ?? [],
+    );
+    return res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/v1/assistant/confirm", async (req, res, next) => {
+  const parsed = assistantConfirmSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: "CONFIRMATION_REQUIRED",
+      message: "A valid confirmation token and explicit confirmation are required.",
+    });
+  }
+
+  try {
+    const result = await confirmApplication(
+      parsed.data.confirmationToken,
+      parsed.data.confirmed,
+    );
+
+    if (result.kind === "NOT_CONFIRMED") {
+      return res.status(400).json({ error: "NOT_CONFIRMED" });
+    }
+
+    if (result.kind === "EXPIRED_OR_INVALID") {
+      return res.status(410).json({
+        error: "CONFIRMATION_EXPIRED",
+        message: "Please prepare the application again.",
+      });
+    }
+
+    if (result.kind === "SCHEME_NOT_FOUND") {
+      return res.status(404).json({ error: "SCHEME_NOT_FOUND" });
+    }
+
+    if (result.kind === "DUPLICATE") {
+      return res.status(409).json({
+        error: "DUPLICATE_APPLICATION",
+        message: "An application already exists for this mobile number within the last 7 days.",
+        existingApplicationId: result.existingApplicationId,
+      });
+    }
+
+    return res.status(201).json({
+      message: "Application submitted successfully",
+      application: result.application,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
 
 app.get("/health", async (_req, res, next) => {
   try {
@@ -96,7 +217,7 @@ app.get("/api/v1/loan-schemes", async (_req, res, next) => {
 });
 
 app.post("/api/v1/quotes", async (req, res, next) => {
-  const parsed = validateBody(applicationSchema, req.body);
+  const parsed = validateBody(quoteSchema, req.body);
 
   if (!parsed.success) return validationResponse(res, parsed.errors);
 
@@ -112,12 +233,15 @@ app.post("/api/v1/quotes", async (req, res, next) => {
       });
     }
 
-    const quote = calculateQuote({
-      netWeightGrams: parsed.data.netWeightGrams,
-      grossWeightGrams: parsed.data.grossWeightGrams,
-      karat: parsed.data.karat,
-      schemeId: parsed.data.schemeId,
-    });
+    const quote = calculateQuote(
+      {
+        netWeightGrams: parsed.data.netWeightGrams,
+        grossWeightGrams: parsed.data.grossWeightGrams,
+        karat: parsed.data.karat,
+        schemeId: parsed.data.schemeId,
+      },
+      toCalculatorScheme(scheme),
+    );
 
     return res.json({ quote });
   } catch (error) {
@@ -144,20 +268,23 @@ app.post("/api/v1/leads", async (req, res, next) => {
       });
     }
 
-    const quote = calculateQuote({
-      netWeightGrams: input.netWeightGrams,
-      grossWeightGrams: input.grossWeightGrams,
-      karat: input.karat,
-      schemeId: input.schemeId,
-    });
+    const quote = calculateQuote(
+      {
+        netWeightGrams: input.netWeightGrams,
+        grossWeightGrams: input.grossWeightGrams,
+        karat: input.karat,
+        schemeId: input.schemeId,
+      },
+      toCalculatorScheme(scheme),
+    );
 
     const created = await prisma.$transaction(async (tx) => {
       // Serialize submissions for the same mobile number within PostgreSQL.
       await tx.$queryRaw<{ locked: number }[]>`
-        SELECT 1 AS locked
-        FROM (
+        WITH acquired AS MATERIALIZED (
           SELECT pg_advisory_xact_lock(hashtext(${input.mobile}))
-        ) AS lock_result
+        )
+        SELECT 1 AS locked FROM acquired
       `;
 
       const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -285,3 +412,8 @@ app.use((
 });
 
 export default app;
+
+
+
+
+
