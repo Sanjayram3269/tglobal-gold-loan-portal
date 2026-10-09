@@ -78,7 +78,8 @@ The assignment will be built around these principles:
 - [x] Three-step borrower application flow with live quotes.
 - [x] Demo application dashboard with masked mobile numbers and plan filtering.
 - [x] AI assistant with scheme lookup, backend quote calculation, and explicit confirmation.
-- [ ] Five documented AI conversation evaluations with repeatable expected outcomes.
+- [x] Five documented AI conversation evaluation scenarios in [`docs/AI_EVALUATIONS.md`](docs/AI_EVALUATIONS.md).
+- [ ] Execute and record all five live-model evaluation outcomes.
 - [x] Loan-calculator, assistant-confirmation, and HTTP API tests are defined; verify the latest CI run.
 - [x] `README.md`, `.env.example`, and `AI_LOG.md`.
 - [ ] Clean-clone and secret-hygiene verification on the final revision.
@@ -517,7 +518,7 @@ Edit `apps/api/.env` and set `DATABASE_URL` to your PostgreSQL connection string
 Apply migrations and seed the loan schemes:
 
 ```powershell
-npm exec --workspace=@tglobal/api prisma -- migrate deploy
+npm exec --workspace=@tglobal/api -- prisma migrate deploy
 npm run seed --workspace=@tglobal/api
 ```
 
@@ -553,10 +554,11 @@ Never commit real credentials. If a real key has ever been committed or exposed,
 
 ## 16. Repository structure
 
-Planned structure; names may be refined as implementation develops.
+The current implementation is intentionally compact rather than split into feature folders.
 
 ```text
 tglobal-gold-loan-portal/
+├── .github/workflows/ci.yml
 ├── apps/
 │   ├── api/
 │   │   ├── prisma/
@@ -564,38 +566,26 @@ tglobal-gold-loan-portal/
 │   │   │   ├── migrations/
 │   │   │   └── seed.ts
 │   │   ├── src/
-│   │   │   ├── config/
-│   │   │   ├── middleware/
-│   │   │   ├── routes/
-│   │   │   ├── schemas/
+│   │   │   ├── domain/loan-calculator.ts
 │   │   │   ├── services/
-│   │   │   ├── agent/
-│   │   │   └── app.ts
+│   │   │   │   ├── assistant-confirmation.ts
+│   │   │   │   └── groq-assistant.ts
+│   │   │   ├── lib/prisma.ts
+│   │   │   ├── app.ts
+│   │   │   └── server.ts
 │   │   └── tests/
 │   └── web/
 │       └── src/
-│           ├── components/
-│           ├── features/
-│           │   ├── application/
-│           │   ├── quote/
-│           │   ├── assistant/
-│           │   └── admin/
-│           ├── lib/
-│           └── main.tsx
-├── docs/
-│   ├── ARCHITECTURE.md
-│   └── AI_EVALUATIONS.md
-├── .github/
-│   └── workflows/
-├── .env.example
-├── .gitignore
+│           ├── App.tsx
+│           ├── App.css
+│           ├── AssistantWidget.tsx
+│           └── AssistantWidget.css
+├── docs/AI_EVALUATIONS.md
 ├── AI_LOG.md
-├── docker-compose.yml
+├── .env.example
 ├── package.json
 └── README.md
 ```
-
----
 
 ## 17. Definition of done
 
