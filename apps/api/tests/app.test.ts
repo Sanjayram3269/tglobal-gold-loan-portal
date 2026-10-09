@@ -47,13 +47,17 @@ const bulletScheme = {
   repaymentType: "BULLET",
 };
 
-const validApplication = {
-  name: "Test Applicant",
-  mobile: "9876543210",
+const validQuote = {
   netWeightGrams: 45,
   grossWeightGrams: 50,
   karat: 22,
   schemeId: "PLAN_EMI_01",
+};
+
+const validApplication = {
+  name: "Test Applicant",
+  mobile: "9876543210",
+  ...validQuote,
 };
 
 const tx = {
@@ -134,7 +138,7 @@ describe("HTTP API", () => {
   it("returns the expected quote without creating a lead", async () => {
     const response = await request(app)
       .post("/api/v1/quotes")
-      .send(validApplication);
+      .send(validQuote);
 
     expect(response.status).toBe(200);
     expect(response.body.quote).toMatchObject({
@@ -149,7 +153,7 @@ describe("HTTP API", () => {
   it("returns field-level validation errors for invalid weights", async () => {
     const response = await request(app)
       .post("/api/v1/quotes")
-      .send({ ...validApplication, netWeightGrams: 60 });
+      .send({ ...validQuote, netWeightGrams: 60 });
 
     expect(response.status).toBe(400);
     expect(response.body.error).toBe("VALIDATION_ERROR");
@@ -166,7 +170,7 @@ describe("HTTP API", () => {
   it("returns 404 for an unknown scheme", async () => {
     const response = await request(app)
       .post("/api/v1/quotes")
-      .send({ ...validApplication, schemeId: "PLAN_UNKNOWN" });
+      .send({ ...validQuote, schemeId: "PLAN_UNKNOWN" });
 
     expect(response.status).toBe(404);
     expect(response.body.error).toBe("SCHEME_NOT_FOUND");
