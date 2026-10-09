@@ -27,11 +27,12 @@ The test was corrected to use the actual service contract. Regression tests now 
 - Loan-calculator unit tests cover the reference EMI, bullet, and 18K calculations and invalid weight boundaries.
 - Assistant-confirmation unit tests use mocked persistence to verify the confirmation side-effect boundary.
 - The developer reported 15/15 unit tests passing and successful API/frontend production builds before the latest admin-dashboard and formatting changes.
-- GitHub Actions now runs the API tests and production build on pushes and pull requests. Its latest run must be checked before treating the current revision as CI-verified.
+- GitHub Actions runs the API tests and production build on pushes and pull requests. Run #17 passed on commit `106767e`: 25 tests passed across three Vitest files, followed by successful API and frontend production builds.
 
 ## Limitations
 
 - The Groq-backed conversation still requires a valid server-side `GROQ_API_KEY`.
+- `npm ci` reported five high-severity dependency advisories. Their affected packages and fixes have not yet been individually audited; review the audit report before production deployment.
 - Confirmation tokens are stored in process memory, expire after ten minutes, and are lost on API restart; they are not session-bound or durable across multiple API instances.
 - The demo admin view and leads endpoint are not protected by authentication/authorization. Do not deploy with real applicant data until access control, rate limiting, and privacy controls are implemented.
 - The gold price is a mock reference rate, not a live market feed. Repayment schedules are not calculated by the quote endpoint.
