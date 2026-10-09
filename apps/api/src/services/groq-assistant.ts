@@ -9,18 +9,24 @@ import {
   type LoanScheme,
 } from "../domain/loan-calculator.js";
 
-const apiKey = process.env.GROQ_API_KEY;
-
-if (!apiKey) {
-  throw new Error("GROQ_API_KEY is missing from apps/api/.env");
-}
-
-const ai = new OpenAI({
-  apiKey,
-  baseURL: "https://api.groq.com/openai/v1",
-});
-
 const model = process.env.GROQ_MODEL || "openai/gpt-oss-20b";
+
+let ai: OpenAI | null = null;
+
+function getAIClient(): OpenAI {
+  const apiKey = process.env.GROQ_API_KEY;
+
+  if (!apiKey) {
+    throw new Error("GROQ_API_KEY is required to use the AI assistant.");
+  }
+
+  ai ??= new OpenAI({
+    apiKey,
+    baseURL: "https://api.groq.com/openai/v1",
+  });
+
+  return ai;
+}
 
 /* -------------------------------------------------------------------------- */
 /* Validation schemas                                                         */
@@ -348,6 +354,7 @@ export async function runGroqAssistant(
   message: string,
   history: unknown[] = [],
 ) {
+  const aiClient = getAIClient();
   let pendingApplication: unknown = null;
 
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
@@ -363,7 +370,7 @@ export async function runGroqAssistant(
   ];
 
   for (let attempt = 0; attempt < 4; attempt += 1) {
-    const response = await ai.chat.completions.create({
+    const response = await aiClient.chat.completions.create({
       model,
       messages,
       tools,
