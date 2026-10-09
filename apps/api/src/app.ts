@@ -16,13 +16,24 @@ const app = express();
 
 app.use(helmet());
 
-const allowedOrigins = (
-  process.env.WEB_ORIGIN ??
-  "http://localhost:5173,http://localhost:5174,http://localhost:5175"
-)
+const configuredOrigins = (process.env.WEB_ORIGIN ?? "")
   .split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
+
+const localDevelopmentOrigins =
+  process.env.NODE_ENV === "production"
+    ? []
+    : [
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://localhost:5175",
+      ];
+
+const allowedOrigins = new Set([
+  ...configuredOrigins,
+  ...localDevelopmentOrigins,
+]);
 
 app.use(cors({
   origin(origin, callback) {
