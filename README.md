@@ -399,6 +399,10 @@ A real production lending product would additionally require authenticated borro
 
 ## 12. Testing and evaluation
 
+### Current automated verification
+
+The latest GitHub Actions run on `main` passed: 25 tests across three Vitest files, followed by successful API TypeScript and frontend production builds. See the [CI run](https://github.com/Sanjayram3269/tglobal-gold-loan-portal/actions/runs/37985618942). These checks do not replace live database/browser verification or the live-model conversation evaluations below.
+
 ### Financial unit tests
 
 - All three required reference calculations.
@@ -599,7 +603,7 @@ The repository has the core implementation and an automated CI workflow, but fin
 - [x] A demo admin table with plan filtering and masked mobile numbers is implemented.
 - [x] Environment example and AI usage log are present.
 - [x] GitHub Actions runs tests and builds on pushes and pull requests.
-- [ ] Confirm latest CI is green after all audit changes.
+- [x] Latest GitHub Actions test/build run is green on the current main revision.
 - [ ] Complete and record the five required AI conversation evaluations.
 - [ ] Verify clean-clone setup and browser flows against a fresh database.
 - [ ] Add authentication and role-based access before using the admin view with real applicant data.
