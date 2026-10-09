@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+!.env.test.example
+!.env.production.example
+!.env.example.local
+!.env.test.example.local
+!.env.production.example.local
+*.log
+.DS_Store
+Thumbs.db

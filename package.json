@@ -1,0 +1,29 @@
+{
+  "name": "tglobal-gold-loan-portal",
+  "version": "1.0.0",
+  "description": "> **Full-Stack Developer Intern Take-Home Assignment**   > A production-minded gold-loan intake portal with a validated REST API, a responsive borrower application flow, an admin view, and an AI assistant that uses backend tools rather than guessing.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Sanjayram3269/tglobal-gold-loan-portal.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Sanjayram3269/tglobal-gold-loan-portal/issues"
+  },
+  "homepage": "https://github.com/Sanjayram3269/tglobal-gold-loan-portal#readme",
+  "private": "true",
+  "workspaces": [
+    "apps/api",
+    "apps/web"
+  ]
+}
