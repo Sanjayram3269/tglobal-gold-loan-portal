@@ -36,6 +36,40 @@ const money = (value: number) =>
     maximumFractionDigits: 0,
   }).format(value)
 
+
+function renderAssistantText(text: string) {
+  const renderInline = (line: string, lineKey: string) =>
+    line.split(/(\*\*[^*]+\*\*|\*[^*]+\*|\`[^\`]+\`)/g).map((part, index) => {
+      const key = `${lineKey}-${index}`;
+      if (part.startsWith("**") && part.endsWith("**")) {
+        return <strong key={key}>{part.slice(2, -2)}</strong>;
+      }
+      if (part.startsWith("*") && part.endsWith("*")) {
+        return <em key={key}>{part.slice(1, -1)}</em>;
+      }
+      if (part.startsWith("`") && part.endsWith("`")) {
+        return <code key={key}>{part.slice(1, -1)}</code>;
+      }
+      return part;
+    });
+
+  return text.split("\n").map((line, index) => {
+    const key = `line-${index}`;
+    const trimmed = line.trim();
+    if (!trimmed) return <br key={key} />;
+    if (/^[-•]\s+/.test(trimmed)) {
+      return <div className="tga-formatted-list-item" key={key}>• {renderInline(trimmed.replace(/^[-•]\s+/, ""), key)}</div>;
+    }
+    if (/^\d+[.)]\s+/.test(trimmed)) {
+      const match = trimmed.match(/^(\d+)[.)]\s+(.*)$/);
+      if (match) {
+        return <div className="tga-formatted-list-item" key={key}><strong>{match[1]}.</strong> {renderInline(match[2], key)}</div>;
+      }
+    }
+    return <div key={key}>{renderInline(line, key)}</div>;
+  });
+}
+
 export default function AssistantWidget() {
   const [open, setOpen] = useState(false)
   const [message, setMessage] = useState('')
@@ -180,7 +214,7 @@ export default function AssistantWidget() {
                 key={`${index}-${item.role}`}
                 className={`tga-message ${item.role === 'user' ? 'tga-user' : 'tga-model'}`}
               >
-                {item.text}
+                {renderAssistantText(item.text)}
               </div>
             ))}
 
