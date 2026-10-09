@@ -15,7 +15,25 @@ import {
 const app = express();
 
 app.use(helmet());
-app.use(cors());
+
+const allowedOrigins = (
+  process.env.WEB_ORIGIN ??
+  "http://localhost:5173,http://localhost:5174,http://localhost:5175"
+)
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+app.use(cors({
+  origin(origin, callback) {
+    // Non-browser clients and same-origin requests may omit Origin.
+    if (!origin || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    return callback(null, false);
+  },
+}));
+
 app.use(express.json({ limit: "32kb" }));
 
 const applicationSchema = z.object({
