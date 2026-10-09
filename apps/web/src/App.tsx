@@ -27,10 +27,24 @@ type Quote = {
 }
 
 type Application = {
-  applicationId: string
+  id: string
   mobile: string
   eligibleLoanRupees: number
   status: string
+  createdAt?: string
+}
+
+type Lead = {
+  id: string
+  name: string
+  mobile: string
+  netWeightGrams: number
+  grossWeightGrams: number
+  karat: number
+  schemeId: string
+  eligibleLoanRupees: number
+  status: string
+  createdAt: string
 }
 
 const money = (value: number) =>
@@ -56,6 +70,10 @@ function App() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+  const [leads, setLeads] = useState<Lead[]>([])
+  const [leadsLoading, setLeadsLoading] = useState(true)
+  const [leadsError, setLeadsError] = useState('')
+  const [leadPlanFilter, setLeadPlanFilter] = useState('ALL')
 
   useEffect(() => {
     fetch(`${API}/api/v1/loan-schemes`)
@@ -72,6 +90,25 @@ function App() {
       })
       .catch(() => setError('Unable to connect to the loan service. Check that the API is running on port 4000.'))
       .finally(() => setLoadingSchemes(false))
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    fetch(`${API}/api/v1/leads`)
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Unable to load applications.')
+        return response.json()
+      })
+      .then((data) => {
+        if (active) setLeads(Array.isArray(data.leads) ? data.leads : [])
+      })
+      .catch(() => {
+        if (active) setLeadsError('Could not load applications. Check that the API is running.')
+      })
+      .finally(() => {
+        if (active) setLeadsLoading(false)
+      })
+    return () => { active = false }
   }, [])
 
   useEffect(() => {
@@ -158,7 +195,8 @@ function App() {
         }
         return
       }
-      setApplication(data)
+      setApplication(data.application)
+      setLeads((current) => [data.application as Lead, ...current.filter((lead) => lead.id !== data.application.id)])
       setStep(3)
     } catch {
       setError('Could not reach the server. Please try again.')
@@ -191,6 +229,7 @@ function App() {
         <nav className="header-nav">
           <a href="#how-it-works">How it works</a>
           <a href="#loan-plans">Loan plans</a>
+          <a href="#applications">Applications</a>
           <a className="header-cta" href="#apply">Get a quote <span>↗</span></a>
         </nav>
       </header>
@@ -379,6 +418,60 @@ function App() {
             ))}
             {!schemes.length && !loadingSchemes && <p className="plans-intro">Loan plans are temporarily unavailable. Please try again shortly.</p>}
           </div>
+        </section>
+
+
+        <section id="applications" className="admin-section">
+          <div className="admin-heading">
+            <div>
+              <div className="eyebrow"><span /> DEMO ADMIN VIEW</div>
+              <h2>Application <em>dashboard.</em></h2>
+              <p>Recently submitted applications, newest first. Mobile numbers are masked.</p>
+            </div>
+            <div className="admin-controls">
+              <label htmlFor="lead-plan-filter">Filter by plan</label>
+              <select id="lead-plan-filter" value={leadPlanFilter} onChange={(event) => setLeadPlanFilter(event.target.value)}>
+                <option value="ALL">All plans</option>
+                {schemes.map((scheme) => <option key={scheme.id} value={scheme.id}>{scheme.name}</option>)}
+              </select>
+              <button type="button" className="secondary-button" onClick={() => {
+                setLeadsLoading(true)
+                setLeadsError('')
+                fetch(`${API}/api/v1/leads`)
+                  .then(async (response) => {
+                    if (!response.ok) throw new Error('Unable to load applications.')
+                    return response.json()
+                  })
+                  .then((data) => setLeads(Array.isArray(data.leads) ? data.leads : []))
+                  .catch(() => setLeadsError('Could not load applications. Please retry.'))
+                  .finally(() => setLeadsLoading(false))
+              }}>Refresh</button>
+            </div>
+          </div>
+          {leadsError && <p className="admin-feedback" role="alert">{leadsError}</p>}
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead><tr><th>Applicant</th><th>Mobile</th><th>Gold</th><th>Plan</th><th>Eligible amount</th><th>Status</th><th>Submitted</th></tr></thead>
+              <tbody>
+                {leadsLoading ? (
+                  <tr><td colSpan={7}>Loading applications…</td></tr>
+                ) : leads.filter((lead) => leadPlanFilter === 'ALL' || lead.schemeId === leadPlanFilter).length === 0 ? (
+                  <tr><td colSpan={7}>No applications match this filter.</td></tr>
+                ) : leads.filter((lead) => leadPlanFilter === 'ALL' || lead.schemeId === leadPlanFilter).map((lead) => (
+                  <tr key={lead.id}>
+                    <td><strong>{lead.name}</strong><small>{lead.id}</small></td>
+                    <td>{lead.mobile}</td>
+                    <td>{lead.netWeightGrams}g net · {lead.grossWeightGrams}g gross · {lead.karat}K</td>
+                    <td>{schemes.find((scheme) => scheme.id === lead.schemeId)?.name ?? lead.schemeId}</td>
+                    <td>{money(lead.eligibleLoanRupees)}</td>
+                    <td><span className="admin-status">{lead.status}</span></td>
+                    <td>{new Date(lead.createdAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="admin-note">Demonstration dashboard only. Authentication and role-based access must be added before production use.</p>
         </section>
 
         <section className="closing-cta">
