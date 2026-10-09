@@ -274,3 +274,27 @@
   }
   .tga-launcher { min-height: 48px; padding: 0 16px; }
 }
+
+
+/* Readability adjustments for chat, application review and status copy. */
+.tga-launcher { font-size: 14px; }
+.tga-heading strong { font-size: 15px; }
+.tga-heading span { font-size: 12px; line-height: 1.4; }
+.tga-message { font-size: 14px; line-height: 1.65; }
+.tga-review-label { font-size: 11px; line-height: 1.5; }
+.tga-review h3 { font-size: 18px; }
+.tga-review-row,.tga-review-amount { font-size: 13px; line-height: 1.5; }
+.tga-review-amount strong { font-size: 24px; }
+.tga-review p { font-size: 12px; line-height: 1.65; }
+.tga-confirm,.tga-edit { font-size: 14px; }
+.tga-success { font-size: 14px; line-height: 1.5; }
+.tga-success small { font-size: 12px; }
+.tga-error { font-size: 13px; line-height: 1.6; }
+.tga-composer input { font-size: 16px; }
+.tga-disclaimer { font-size: 11px; line-height: 1.5; }
+
+@media (max-width: 480px) {
+  .tga-panel { min-height: min(380px, calc(100dvh - 100px)); }
+  .tga-messages { padding: 14px; }
+  .tga-message { max-width: 96%; }
+}
