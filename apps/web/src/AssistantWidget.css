@@ -298,3 +298,31 @@
   .tga-messages { padding: 14px; }
   .tga-message { max-width: 96%; }
 }
+
+
+/* Keep the desktop panel anchored to the viewport, independent of the launcher width. */
+@media (min-width: 481px) {
+  .tga-widget {
+    width: auto;
+    height: auto;
+  }
+
+  .tga-panel {
+    position: fixed;
+    right: 24px;
+    bottom: 92px;
+    width: min(390px, calc(100vw - 48px));
+    max-height: calc(100dvh - 116px);
+    min-height: min(380px, calc(100dvh - 116px));
+  }
+}
+
+@media (max-width: 480px) {
+  .tga-panel {
+    right: 8px;
+    bottom: 76px;
+    width: calc(100vw - 16px);
+    max-height: calc(100dvh - 100px);
+    min-height: min(320px, calc(100dvh - 100px));
+  }
+}
