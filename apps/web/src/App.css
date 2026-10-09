@@ -237,3 +237,65 @@ button:disabled { opacity:.6; cursor:not-allowed; }
   .field-grid .full-field { grid-column:1; }
   .form-card,.quote-card { padding:19px 14px; }
 }
+
+
+/* Global readability pass: retain the editorial visual style while making UI copy easier to read. */
+body { font-size: 16px; line-height: 1.6; }
+.announcement { font-size: 11px; }
+.header-nav { font-size: 14px; }
+.header-cta { font-size: 14px; }
+.eyebrow { font-size: 11px; }
+.hero-description { font-size: 16px; line-height: 1.8; }
+.primary-button { font-size: 14px; }
+.text-button { font-size: 14px; }
+.trust-row strong { font-size: 12px; }
+.trust-row span { font-size: 11px; line-height: 1.5; }
+.floating-card-top { font-size: 10px; }
+.floating-card small { font-size: 11px; line-height: 1.5; }
+.section-heading>p { font-size: 16px; line-height: 1.8; }
+.form-topline,.quote-card-head { font-size: 11px; }
+.form-heading p { font-size: 14px; line-height: 1.6; }
+.field { font-size: 14px; }
+.field input,.field select,.mobile-input { font-size: 16px; }
+.karat-option span { font-size: 12px; line-height: 1.4; }
+.form-note { font-size: 13px; line-height: 1.65; }
+.field-error { font-size: 12px; }
+.secondary-button { font-size: 14px; }
+.live-badge { font-size: 10px; }
+.quote-caption { font-size: 14px; }
+.quote-detail { font-size: 14px; line-height: 1.5; }
+.quote-plan>div:first-child span { font-size: 10px; }
+.quote-plan>div:first-child strong { font-size: 14px; line-height: 1.45; }
+.plan-rate small { font-size: 12px; }
+.quote-footnote { font-size: 12px; line-height: 1.7; }
+.secure-line { font-size: 12px; line-height: 1.6; }
+.review-list>div { font-size: 14px; line-height: 1.5; }
+.disclaimer,.error-banner { font-size: 13px; line-height: 1.65; }
+.success-state>p { font-size: 15px; }
+.application-reference span,.success-amount span { font-size: 11px; line-height: 1.5; }
+.application-reference strong { font-size: 14px; }
+.step-index,.plan-number { font-size: 10px; line-height: 1.5; }
+.steps-grid p { font-size: 14px; line-height: 1.75; }
+.plans-intro { font-size: 15px; line-height: 1.75; }
+.plan-card>p { font-size: 14px; line-height: 1.7; }
+.plan-meta { font-size: 13px; }
+.plan-button { font-size: 14px; }
+.site-footer>p,.site-footer>span { font-size: 12px; line-height: 1.5; }
+
+@media (max-width: 680px) {
+  .announcement { min-height: 34px; height: auto; padding: 8px 12px; font-size: 10px; line-height: 1.4; }
+  .header-cta { font-size: 13px; }
+  .hero-description { font-size: 16px; }
+  .trust-row strong { font-size: 12px; }
+  .trust-row span { font-size: 11px; }
+  .hero-bottom-line { font-size: 9px; }
+  .section-heading h2,.steps-section h2,.plans-section h2 { font-size: clamp(36px, 9vw, 42px); }
+  .form-heading h3 { font-size: 20px; }
+  .field-grid { gap: 18px 15px; }
+  .form-card,.quote-card { padding: 22px 18px; }
+}
+@media (max-width: 380px) {
+  .primary-button { font-size: 13px; }
+  .trust-row strong { font-size: 11px; }
+  .trust-row span { font-size: 10px; }
+}
