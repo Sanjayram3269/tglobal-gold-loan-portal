@@ -74,6 +74,7 @@ function App() {
   const [leadsLoading, setLeadsLoading] = useState(true)
   const [leadsError, setLeadsError] = useState('')
   const [leadPlanFilter, setLeadPlanFilter] = useState('ALL')
+  const [showAdmin, setShowAdmin] = useState(false)
 
   useEffect(() => {
     fetch(`${API}/api/v1/loan-schemes`)
@@ -93,6 +94,7 @@ function App() {
   }, [])
 
   useEffect(() => {
+    if (!showAdmin) return
     let active = true
     fetch(`${API}/api/v1/leads`)
       .then(async (response) => {
@@ -109,7 +111,7 @@ function App() {
         if (active) setLeadsLoading(false)
       })
     return () => { active = false }
-  }, [])
+  }, [showAdmin])
 
   useEffect(() => {
     if (!net || !gross || !karat || !schemeId) {
@@ -228,7 +230,7 @@ function App() {
         <nav className="header-nav">
           <a href="#how-it-works">How it works</a>
           <a href="#loan-plans">Loan plans</a>
-          <a href="#applications">Applications</a>
+          <a href="#applications" onClick={() => setShowAdmin(true)}>Applications</a>
           <a className="header-cta" href="#apply">Get a quote <span>↗</span></a>
         </nav>
       </header>
@@ -420,7 +422,7 @@ function App() {
         </section>
 
 
-        <section id="applications" className="admin-section">
+        {showAdmin && <section id="applications" className="admin-section">
           <div className="admin-heading">
             <div>
               <div className="eyebrow"><span /> DEMO ADMIN VIEW</div>
@@ -433,6 +435,7 @@ function App() {
                 <option value="ALL">All plans</option>
                 {schemes.map((scheme) => <option key={scheme.id} value={scheme.id}>{scheme.name}</option>)}
               </select>
+              <button type="button" className="secondary-button" onClick={() => setShowAdmin(false)}>Close</button>
               <button type="button" className="secondary-button" onClick={() => {
                 setLeadsLoading(true)
                 setLeadsError('')
@@ -471,7 +474,7 @@ function App() {
             </table>
           </div>
           <p className="admin-note">Demonstration dashboard only. Authentication and role-based access must be added before production use.</p>
-        </section>
+        </section>}
 
         <section className="closing-cta">
           <div><div className="eyebrow"><span /> YOUR NEXT CHAPTER STARTS HERE</div><h2>Let your gold<br /><em>move you forward.</em></h2></div>
@@ -485,6 +488,7 @@ function App() {
       <footer className="site-footer">
         <a className="brand footer-brand" href="#"><span className="brand-mark">T</span><span>TGLOBAL<span className="brand-sub">GOLD LOANS</span></span></a>
         <p>Clear estimates. Informed decisions.</p>
+        <a href="#applications" onClick={() => setShowAdmin(true)}>Demo applications</a>
         <span>© {new Date().getFullYear()} TGlobal · Demo experience</span>
       </footer>
     </div>
