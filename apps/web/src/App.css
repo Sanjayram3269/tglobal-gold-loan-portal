@@ -379,3 +379,11 @@ body { font-size: 16px; line-height: 1.6; }
   .admin-controls label { width: 100%; }
   .admin-controls select { flex: 1; min-width: 0; }
 }
+
+
+.site-footer>a:not(.brand) {
+  color: #ad8d54;
+  font-size: 13px;
+  text-decoration: none;
+}
+.site-footer>a:not(.brand):hover { color: #243e32; }
