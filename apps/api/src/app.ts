@@ -38,7 +38,7 @@ const allowedOrigins = new Set([
 app.use(cors({
   origin(origin, callback) {
     // Non-browser clients and same-origin requests may omit Origin.
-    if (!origin || allowedOrigins.includes(origin)) {
+    if (!origin || allowedOrigins.has(origin)) {
       return callback(null, true);
     }
     return callback(null, false);
