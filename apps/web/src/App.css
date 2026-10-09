@@ -299,3 +299,83 @@ body { font-size: 16px; line-height: 1.6; }
   .trust-row strong { font-size: 11px; }
   .trust-row span { font-size: 10px; }
 }
+
+
+/* Demo admin applications table */
+.admin-section {
+  padding: clamp(64px, 8vw, 112px) max(24px, calc((100vw - 1120px) / 2));
+  background: #fbfaf7;
+}
+.admin-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 28px;
+  margin-bottom: 28px;
+}
+.admin-heading h2 {
+  margin: 18px 0 12px;
+  color: #242721;
+  font-size: clamp(34px, 4vw, 48px);
+  font-weight: 400;
+  letter-spacing: -.045em;
+  line-height: 1.08;
+}
+.admin-heading h2 em { color: #ad8d54; font-family: Georgia, serif; font-weight: 400; }
+.admin-heading p,.admin-note { color: #73766e; font-size: 15px; line-height: 1.7; }
+.admin-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.admin-controls label { color: #55594f; font-size: 14px; }
+.admin-controls select {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid #ded9cc;
+  border-radius: 6px;
+  background: white;
+  color: #30342d;
+  font: inherit;
+}
+.admin-table-wrap {
+  overflow-x: auto;
+  border: 1px solid #e8e4da;
+  border-radius: 12px;
+  background: white;
+}
+.admin-table { width: 100%; border-collapse: collapse; min-width: 850px; text-align: left; }
+.admin-table th {
+  padding: 14px 16px;
+  background: #243e32;
+  color: #fff8e9;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.admin-table td {
+  padding: 15px 16px;
+  border-bottom: 1px solid #efede6;
+  color: #3d4138;
+  font-size: 13px;
+  line-height: 1.5;
+  vertical-align: middle;
+}
+.admin-table tbody tr:last-child td { border-bottom: 0; }
+.admin-table td strong { display: block; color: #242721; font-size: 14px; }
+.admin-table td small { display: block; max-width: 180px; margin-top: 3px; color: #858579; font-size: 10px; overflow-wrap: anywhere; }
+.admin-status {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #edf4ed;
+  color: #31553b;
+  font-size: 11px;
+  font-weight: 700;
+}
+.admin-feedback { margin: 0 0 14px; color: #8e3025; font-size: 14px; }
+.admin-note { margin-top: 14px; font-size: 12px; }
+
+@media (max-width: 680px) {
+  .admin-section { padding: 64px 18px; }
+  .admin-heading { align-items: stretch; flex-direction: column; gap: 18px; }
+  .admin-controls { align-items: stretch; }
+  .admin-controls label { width: 100%; }
+  .admin-controls select { flex: 1; min-width: 0; }
+}
