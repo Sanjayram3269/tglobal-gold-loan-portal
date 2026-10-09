@@ -96,6 +96,8 @@ function App() {
   useEffect(() => {
     if (!showAdmin) return
     let active = true
+    setLeadsLoading(true)
+    setLeadsError('')
     fetch(`${API}/api/v1/leads`)
       .then(async (response) => {
         if (!response.ok) throw new Error('Unable to load applications.')
