@@ -627,32 +627,3 @@ Possible future work includes a real, authenticated rate-provider integration, r
 See [`AI_LOG.md`](AI_LOG.md) for the prompts used, a concrete generated-code mismatch that was corrected, the regression tests, and known limitations.
 
 The log and automated test results should be kept honest and updated after the final clean-clone and end-to-end verification.
-
-
-
-AI-assisted development is permitted by the assignment, but its output must be critically reviewed.
-
-The accompanying `AI_LOG.md` will record:
-
-1. AI tools used and which tasks they assisted with.
-2. Two exact prompts: one for validation and one for agent tools.
-3. One real instance where generated code or reasoning was wrong.
-4. How the issue was detected.
-5. The regression test added to prevent recurrence.
-
-This section is a pointer to the evidence log, not a substitute for it. The final log must reflect actual development and must not invent errors, tests, or verification results.
-
----
-
-## Assignment scoring alignment
-
-| Criterion | Weight | Evidence in this repository |
-|---|---:|---|
-| Maths and validation | 25 | Exact calculation service, input schemas, reference tests |
-| AI agent | 25 | Three tools, backend-grounded results, confirmation gate, conversation evaluations |
-| Full-stack UX | 20 | Responsive three-step flow, live quote, chat, admin table |
-| Tests and conversations | 15 | Unit tests, API tests, five required conversation scenarios |
-| API and errors | 10 | Status codes, structured errors, async error handling |
-| AI log and README | 5 | Setup documentation and honest AI review log |
-
-The goal is not merely to demonstrate a working screen. It is to demonstrate a small, coherent system whose financial behavior is deterministic, whose AI actions are constrained, whose data handling is deliberate, and whose setup and tests can be independently verified.
