@@ -363,7 +363,7 @@ function App() {
                   <div className="eyebrow"><span /> APPLICATION RECEIVED</div>
                   <h3>You're one step<br />closer.</h3>
                   <p>Your application has been recorded. This does not mean your loan has been approved.</p>
-                  <div className="application-reference"><span>APPLICATION REFERENCE</span><strong>{application.applicationId ?? (application as unknown as { id?: string }).id ?? 'Submitted successfully'}</strong></div>
+                  <div className="application-reference"><span>APPLICATION REFERENCE</span><strong>{application.id}</strong></div>
                   <div className="success-amount"><span>Indicative loan amount</span><strong>{money(application.eligibleLoanRupees ?? quote?.eligibleLoanRupees ?? 0)}</strong></div>
                   <button className="secondary-button full-button" onClick={startOver}>Start a new estimate ↗</button>
                 </div>
