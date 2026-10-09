@@ -263,7 +263,7 @@ export default function AssistantWidget() {
         </section>
       )}
 
-      <button
+      {!open && <button
         type="button"
         className="tga-launcher"
         onClick={() => setOpen((value) => !value)}
@@ -271,8 +271,8 @@ export default function AssistantWidget() {
         aria-label={open ? 'Close TGlobal assistant' : 'Open TGlobal assistant'}
       >
         {open ? '×' : '✳'}
-        {!open && <span>Ask TGlobal AI</span>}
-      </button>
+        <span>Ask TGlobal AI</span>
+      </button>}
     </div>
   )
 }
