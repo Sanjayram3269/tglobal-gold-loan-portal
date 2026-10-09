@@ -3,7 +3,7 @@
 > **Full-Stack Developer Intern Take-Home Assignment**  
 > A production-minded gold-loan intake portal with a validated REST API, a responsive borrower application flow, an admin view, and an AI assistant that uses backend tools rather than guessing.
 
-**Project status:** Core demo implemented; final runtime and CI verification is required before submission.  
+**Project status:** Core demo implemented; CI is green. Live Groq evaluation and fresh-database/browser verification remain outstanding.  
 **Purpose:** Technical hiring assignment. This is a demonstration system using a mock gold rate, not a live lending or financial-advice product.
 
 ---
@@ -611,6 +611,8 @@ The repository has the core implementation and an automated CI workflow, but fin
 ## 18. Known limitations and future improvements
 
 The initial demonstration uses a fixed mock gold rate and seeded plans. It does not verify jewellery authenticity, purity, identity, collateral ownership, creditworthiness, or lending-partner policy. A displayed eligible loan is not a guarantee of approval.
+
+The current dependency install reports five high-severity npm audit findings. Review the detailed advisory report and apply compatible fixes before any production deployment.
 
 Possible future work includes a real, authenticated rate-provider integration, role-based access, secure document storage, audit/monitoring infrastructure, accessibility testing, deployment automation, and additional compliance review.
 
