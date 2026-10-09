@@ -1,0 +1,40 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model LoanScheme {
+  id                  String   @id
+  name                String
+  interestRatePercent Decimal  @db.Decimal(5, 2)
+  maxLtv              Decimal  @db.Decimal(4, 3)
+  tenureMonths        Int
+  repaymentType       String
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  leads Lead[]
+}
+
+model Lead {
+  id                 String   @id @default(uuid()) @db.Uuid
+  name               String   @db.VarChar(60)
+  mobile             String   @db.VarChar(10)
+  netWeightGrams     Decimal  @db.Decimal(10, 3)
+  grossWeightGrams   Decimal  @db.Decimal(10, 3)
+  karat              Int
+  schemeId           String
+  eligibleLoanRupees BigInt
+  status             String   @default("SUBMITTED")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  scheme LoanScheme @relation(fields: [schemeId], references: [id])
+
+  @@index([mobile, createdAt])
+  @@index([createdAt])
+}
