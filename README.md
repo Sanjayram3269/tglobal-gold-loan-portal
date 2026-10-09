@@ -3,7 +3,7 @@
 > **Full-Stack Developer Intern Take-Home Assignment**  
 > A production-minded gold-loan intake portal with a validated REST API, a responsive borrower application flow, an admin view, and an AI assistant that uses backend tools rather than guessing.
 
-**Project status:** Planning / implementation in progress  
+**Project status:** Core demo implemented; final runtime and CI verification is required before submission.  
 **Purpose:** Technical hiring assignment. This is a demonstration system using a mock gold rate, not a live lending or financial-advice product.
 
 ---
@@ -70,18 +70,18 @@ The assignment will be built around these principles:
 
 ### Required deliverables
 
-- [ ] Four required API endpoints.
-- [ ] PostgreSQL database, migrations, and a seed script.
-- [ ] Exact gold purity, valuation, and eligible-loan calculations.
-- [ ] Server-side validation and server-side quote recalculation on submission.
-- [ ] Seven-day duplicate-application protection.
-- [ ] Three-step responsive borrower application flow with live quotes.
-- [ ] Admin lead table with masked mobile numbers and plan filtering.
-- [ ] AI chat with the three required tools and explicit submission confirmation.
-- [ ] Five documented AI conversation tests.
-- [ ] Unit and API tests.
-- [ ] `README.md`, `.env.example`, and `AI_LOG.md`.
-- [ ] No committed secrets; clean install and documented development/test commands.
+- [x] Four required API endpoints.
+- [x] PostgreSQL schema, migration, and deterministic seed script.
+- [x] Decimal-based gold purity, valuation, and eligible-loan calculations.
+- [x] Server-side validation and quote recalculation on application submission.
+- [x] Transaction-scoped advisory lock and seven-day duplicate check.
+- [x] Three-step borrower application flow with live quotes.
+- [x] Demo application dashboard with masked mobile numbers and plan filtering.
+- [x] AI assistant with scheme lookup, backend quote calculation, and explicit confirmation.
+- [ ] Five documented AI conversation evaluations with repeatable expected outcomes.
+- [x] Loan-calculator, assistant-confirmation, and HTTP API tests are defined; verify the latest CI run.
+- [x] `README.md`, `.env.example`, and `AI_LOG.md`.
+- [ ] Clean-clone and secret-hygiene verification on the final revision.
 
 ### Quality targets
 
@@ -497,79 +497,59 @@ Bonus completion must be described honestly in the README. Do not mark an item c
 
 ## 14. Local development
 
-> The commands below define the intended developer experience. They should be verified against the actual package scripts as implementation proceeds; this README must be kept in sync with the final repository.
-
 ### Prerequisites
 
-- Node.js 22 LTS or a compatible supported Node.js version.
-- npm.
-- Git.
-- Docker Desktop with Docker Compose, or a locally running PostgreSQL instance.
-- An LLM provider key only for live AI conversations; core application tests should not require one.
+- Node.js 22 and npm.
+- PostgreSQL 17 (Docker or a local installation).
+- A Groq API key for live AI assistant conversations. Unit/API tests and production builds should not require a live LLM key.
 
-### Intended setup
+### Setup
 
-```bash
-git clone <YOUR_GITHUB_REPOSITORY_URL>
+```powershell
+git clone https://github.com/Sanjayram3269/tglobal-gold-loan-portal.git
 cd tglobal-gold-loan-portal
-
-npm install
+npm ci
+Copy-Item .env.example apps/api/.env
 ```
 
-Create the local environment file from the example:
+Edit `apps/api/.env` and set `DATABASE_URL` to your PostgreSQL connection string and `GROQ_API_KEY` to your own server-side key. Do not commit this file.
 
-```bash
-# macOS/Linux
-cp .env.example .env
+Apply migrations and seed the loan schemes:
 
-# Windows PowerShell
-Copy-Item .env.example .env
+```powershell
+npm exec --workspace=@tglobal/api prisma -- migrate deploy
+npm run seed --workspace=@tglobal/api
 ```
 
-Start the database, apply migrations, and seed the loan schemes using the scripts documented in the final implementation. Then start the application:
+Start the API and Vite frontend:
 
-```bash
+```powershell
 npm run dev
 ```
 
-Run the automated test suite:
+Vite uses port 5173 when available and may select 5174 or another port if that port is occupied. The API defaults to port 4000. Open the exact URL printed by Vite.
 
-```bash
-npm test
-```
+Run tests and production builds:
 
-Additional scripts will be documented once implemented:
-
-```bash
+```powershell
+npm run test --workspace=@tglobal/api
 npm run build
-npm run lint
-npm run eval
 ```
 
-`npm run eval` is intended for the AI conversation evaluation suite. A final clean-clone check must verify the exact commands above before submission.
-
----
+The root `npm test` script is also available. GitHub Actions runs the API test suite and production build on pushes and pull requests.
 
 ## 15. Environment variables
 
-The final `.env.example` should document every required variable with safe local defaults where appropriate. Expected variables include:
+The root `.env.example` is a safe template. Copy it to `apps/api/.env` for local development and supply your own values.
 
-```dotenv
-NODE_ENV=development
-PORT=3000
-WEB_ORIGIN=http://localhost:5173
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/tglobal_gold_loan
-GOLD_RATE_24K_PER_GRAM=7000
+- `DATABASE_URL`: PostgreSQL connection string.
+- `PORT`: API port (defaults to 4000).
+- `WEB_ORIGIN`: comma-separated allowed browser origins for local Vite development.
+- `GROQ_API_KEY`: server-side key required for live AI conversations.
+- `GROQ_MODEL`: Groq model identifier (defaults to `openai/gpt-oss-20b`).
+- `VITE_API_URL`: optional frontend API URL override; Vite-exposed variables are public, so never put secrets in them.
 
-# Optional until an LLM provider is selected
-LLM_PROVIDER=
-LLM_MODEL=
-LLM_API_KEY=
-```
-
-These names are the planned configuration contract and must be reconciled with the actual implementation. Never commit real credentials. Do not prefix server-only secrets with `VITE_`, because Vite exposes such variables to browser code.
-
----
+Never commit real credentials. If a real key has ever been committed or exposed, revoke or rotate it.
 
 ## 16. Repository structure
 
@@ -619,24 +599,20 @@ tglobal-gold-loan-portal/
 
 ## 17. Definition of done
 
-The assignment is ready to submit only when:
+The repository has the core implementation and an automated CI workflow, but final submission readiness depends on the current CI run and a clean local end-to-end pass.
 
-- [ ] A clean checkout can install dependencies using the documented instructions.
-- [ ] Database migrations and seed data work from an empty database.
-- [ ] The four required API endpoints work.
-- [ ] All financial reference calculations match exactly.
-- [ ] Validation, `404`, duplicate `409`, and sanitized `500` behavior are tested.
-- [ ] Both application paths return the same server-calculated values.
-- [ ] The AI has all three tools and cannot submit without explicit confirmation.
-- [ ] All five required conversation scenarios are covered.
-- [ ] The responsive form and admin table work.
-- [ ] Bonus features attempted are listed honestly, with tests where applicable.
-- [ ] `README.md`, `.env.example`, and `AI_LOG.md` are complete.
-- [ ] No secrets, borrower data, or unnecessary generated artifacts are committed.
-- [ ] `npm install`, `npm run dev`, and `npm test` work as documented.
-- [ ] The repository has a concise, reproducible demo path.
-
----
+- [x] The four required API routes are implemented.
+- [x] Financial reference calculations have unit coverage.
+- [x] Validation, unknown-scheme and duplicate behavior are implemented; HTTP tests are included.
+- [x] Both guided and AI-assisted application flows use server-computed amounts.
+- [x] AI application preparation is separated from explicit confirmation.
+- [x] A demo admin table with plan filtering and masked mobile numbers is implemented.
+- [x] Environment example and AI usage log are present.
+- [x] GitHub Actions runs tests and builds on pushes and pull requests.
+- [ ] Confirm latest CI is green after all audit changes.
+- [ ] Complete and record the five required AI conversation evaluations.
+- [ ] Verify clean-clone setup and browser flows against a fresh database.
+- [ ] Add authentication and role-based access before using the admin view with real applicant data.
 
 ## 18. Known limitations and future improvements
 
@@ -647,6 +623,12 @@ Possible future work includes a real, authenticated rate-provider integration, r
 ---
 
 ## 19. AI usage log
+
+See [`AI_LOG.md`](AI_LOG.md) for the prompts used, a concrete generated-code mismatch that was corrected, the regression tests, and known limitations.
+
+The log and automated test results should be kept honest and updated after the final clean-clone and end-to-end verification.
+
+
 
 AI-assisted development is permitted by the assignment, but its output must be critically reviewed.
 
