@@ -63,6 +63,7 @@ function App() {
   const [gross, setGross] = useState('50')
   const [karat, setKarat] = useState('22')
   const [quote, setQuote] = useState<Quote | null>(null)
+  const [quotesByScheme, setQuotesByScheme] = useState<Record<string, Quote>>({})
   const [application, setApplication] = useState<Application | null>(null)
   const [step, setStep] = useState(1)
   const [loadingSchemes, setLoadingSchemes] = useState(true)
@@ -116,39 +117,52 @@ function App() {
   }, [showAdmin])
 
   useEffect(() => {
-    if (!net || !gross || !karat || !schemeId) {
+    if (!net || !gross || !karat || !schemes.length) {
       setQuote(null)
+      setQuotesByScheme({})
       return
     }
 
+    let active = true
     const timer = window.setTimeout(async () => {
       setQuoting(true)
       try {
-        const response = await fetch(`${API}/api/v1/quotes`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            netWeightGrams: Number(net),
-            grossWeightGrams: Number(gross),
-            karat: Number(karat),
-            schemeId,
-          }),
-        })
-        const data = await response.json()
-        if (!response.ok) {
-          setQuote(null)
-          return
-        }
-        setQuote(data.quote ?? data)
+        const results = await Promise.all(schemes.map(async (scheme) => {
+          const response = await fetch(`${API}/api/v1/quotes`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              netWeightGrams: Number(net),
+              grossWeightGrams: Number(gross),
+              karat: Number(karat),
+              schemeId: scheme.id,
+            }),
+          })
+          if (!response.ok) return null
+          const data = await response.json()
+          return [scheme.id, (data.quote ?? data) as Quote] as const
+        }))
+        if (!active) return
+        const nextQuotes = Object.fromEntries(results.filter(
+          (item): item is NonNullable<typeof item> => item !== null,
+        ))
+        setQuotesByScheme(nextQuotes)
+        setQuote(nextQuotes[schemeId] ?? null)
       } catch {
-        setQuote(null)
+        if (active) {
+          setQuote(null)
+          setQuotesByScheme({})
+        }
       } finally {
-        setQuoting(false)
+        if (active) setQuoting(false)
       }
     }, 300)
 
-    return () => window.clearTimeout(timer)
-  }, [net, gross, karat, schemeId])
+    return () => {
+      active = false
+      window.clearTimeout(timer)
+    }
+  }, [net, gross, karat, schemeId, schemes])
 
   const selectedScheme = useMemo(
     () => schemes.find((scheme) => scheme.id === schemeId),
@@ -414,6 +428,7 @@ function App() {
                 <p>{scheme.repaymentType === 'EMI' ? 'Equal monthly instalments across the tenure.' : 'Principal and applicable interest payable at maturity.'}</p>
                 <div className="plan-meta"><span>Tenure</span><strong>{scheme.tenureMonths} months</strong></div>
                 <div className="plan-meta"><span>Maximum LTV</span><strong>{Number(scheme.maxLtv) * 100}%</strong></div>
+                <div className="plan-meta plan-estimate"><span>Indicative eligible amount</span><strong>{quoting ? 'Calculating…' : quotesByScheme[scheme.id] ? money(quotesByScheme[scheme.id].eligibleLoanRupees) : 'Enter valid weights'}</strong></div>
                 <button className={schemeId === scheme.id ? 'plan-button active' : 'plan-button'} onClick={() => { setSchemeId(scheme.id); document.querySelector('#apply')?.scrollIntoView({ behavior: 'smooth' }) }}>
                   {schemeId === scheme.id ? 'Selected plan ✓' : 'Calculate with this plan →'}
                 </button>
