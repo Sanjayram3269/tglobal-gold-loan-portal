@@ -1,307 +1,215 @@
 # TGlobal Gold Loan Portal
 
-A full-stack gold-loan intake demo built for the TGlobal Full-Stack Developer Intern take-home assignment. It combines a responsive React portal, a validated Node.js API, PostgreSQL persistence, exact quote calculations, and a Groq-powered assistant that calls backend tools and requires explicit confirmation before an application is submitted.
+A full-stack gold-loan intake demonstration built for the TGlobal Full-Stack Developer Intern assignment. It combines a responsive React borrower portal, a validated Express API, PostgreSQL persistence, deterministic quote calculations, an applications dashboard, and a tool-using AI assistant.
 
-> **Demo only:** the reference gold rate is fixed at ₹7,000 per gram for 24K gold. Quotes are indicative, not a lending decision or approval. Do not use this demo with real applicant data.
+> **Demo only:** the 24K gold reference rate is a mock value of ₹7,000 per gram, not a live market price. Quotes are indicative and are not a lending decision or approval. Do not use this demo with real applicant data.
 
-## Submission status
+## Contents
 
-- **Core application:** implemented and manually exercised end to end, including Idempotency-Key replay with opt-in retention cleanup, a lead status workflow with a durable audit log, and a cached mock gold-rate endpoint.
-- **Automated verification:** latest local run passed **72/72 tests across six Vitest files**; lint and API TypeScript/frontend TypeScript-Vite production builds passed; npm audit reports 0 vulnerabilities.
-- **GitHub CI:** See the latest workflow runs at https://github.com/Sanjayram3269/tglobal-gold-loan-portal/actions for the current HEAD; the README CI reference is corrected to the final verified run.
-- **AI conversation checks:** five required scenarios and four additional manual scenarios are recorded in [docs/AI_EVALUATIONS.md](docs/AI_EVALUATIONS.md). These are manual observations, not automated live-model CI tests.
-- **Submission files:** this README, [AI_LOG.md](AI_LOG.md), [.env.example](.env.example), migrations/seed, tests, and GitHub Actions workflow are included.
-- **Bonus scope and limitations:** see [Bonus scope](#bonus-scope) and [Known limitations](#known-limitations).
+- [Features](#features)
+- [Technology stack](#technology-stack)
+- [Financial rules](#financial-rules)
+- [API reference](#api-reference)
+- [Reliability and data integrity](#reliability-and-data-integrity)
+- [Run locally](#run-locally)
+- [Docker Compose](#docker-compose)
+- [Tests and verification](#tests-and-verification)
+- [Documentation](#documentation)
+- [Known limitations](#known-limitations)
 
-## Product walkthrough
+## Features
 
-### Borrower portal
+### Borrower experience
+- Explore loan schemes and their interest rates, LTV limits, and tenure.
+- Enter gold details in a guided application flow and view indicative quotes.
+- Review applicant details before submitting an application.
+- Receive validation errors and duplicate-application feedback.
 
-1. Enter jewellery net/gross weights, karat, and a loan plan.
-2. View backend-calculated indicative estimates for each available plan and choose a plan.
-3. Enter contact details, review the summary, and submit.
-4. Receive an application reference or a friendly duplicate-application message.
+### Backend
+- Node.js, Express 5, TypeScript, and Zod validation.
+- PostgreSQL persistence through Prisma 7.
+- Server-side quote recalculation during submission; quote requests do not create leads.
+- Seven-day duplicate-mobile protection using transaction-scoped PostgreSQL advisory locking.
+- Newest-first application listing with masked mobile numbers.
+- Optional `Idempotency-Key` support for safe retries.
+- Configurable rate limiting for lead creation.
+- Controlled application-status transitions with transactional audit history.
+- Cached mock gold-rate endpoint with a five-minute TTL.
 
 ### AI loan assistant
+The Groq-backed assistant uses backend tools rather than relying on the model for financial arithmetic:
 
-- Retrieves available plans from PostgreSQL.
-- Calls the backend quote calculator rather than doing arithmetic in the model.
-- Collects missing application details and prepares a review card.
-- Does **not** create a lead during preparation. A separate explicit confirmation action is required before the backend creates the application.
-- Refuses unrelated requests, avoids unsupported lender-eligibility claims, and does not promise approval.
-- Uses a ten-minute, single-use in-memory confirmation token.
+1. `get_loan_schemes()` retrieves available schemes.
+2. `calculate_quote(...)` calls the backend quote calculator.
+3. `submit_application(payload)` prepares an application for review; it does not create a lead immediately.
 
-### Demo applications view
+A separate explicit confirmation action is required before an application is submitted. Confirmation tokens are single-use and expire after ten minutes. Live AI conversations require a server-side `GROQ_API_KEY`; automated tests and builds do not require a live model key.
 
-Lists applications newest first, masks mobile numbers, and supports filtering by plan. **This view and its API are not authenticated**; they are for a local/reviewer demo only.
+## Technology stack
 
-## Technology
-
-| Area | Implementation |
+| Area | Technology |
 |---|---|
 | Frontend | React 19, TypeScript, Vite, responsive CSS |
 | API | Node.js, Express 5, TypeScript |
 | Validation | Zod |
 | Database | PostgreSQL 17 |
-| ORM / migrations | Prisma 7 |
-| Money calculations | Decimal.js; eligible loan is floored to whole rupees |
-| AI | Groq API through the OpenAI-compatible SDK; default model openai/gpt-oss-20b |
+| ORM and migrations | Prisma 7 |
+| Financial calculations | Decimal.js |
+| AI integration | Groq API through an OpenAI-compatible SDK |
 | Tests | Vitest, Supertest |
-| CI | GitHub Actions: API tests and API/frontend production builds |
-
-## Architecture
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for component boundaries, request flows, data integrity, errors, and deliberate limitations.
-
-The guided form and AI flow both use the same backend validation, quote calculation, and duplicate protection. The model never acts as the source of truth for financial calculations.
+| CI | GitHub Actions |
+| Containers | Optional Docker Compose and API/web Dockerfiles |
 
 ## Financial rules
 
-Mock 24K rate: **₹7,000/g**.
+The configured 24K reference rate is **₹7,000 per gram**.
 
-| Plan ID | Plan | Interest p.a. | Max LTV | Tenure |
-|---|---|---:|---:|---|
-| PLAN_BULLET_01 | Bullet Repayment | 12.0% | 70% | 12 months |
-| PLAN_EMI_01 | Monthly EMI | 10.5% | 75% | 12 months |
+- `pureGoldGrams = netWeightGrams × (karat / 24)`
+- `goldValue = pureGoldGrams × rate24kPerGram`
+- `eligibleLoan = floor(goldValue × min(plan.maxLtv, 0.75))`
 
-Calculation:
-- pureGoldGrams = netWeightGrams × (karat / 24)
-- goldValue = pureGoldGrams × rate24kPerGram
-- eligibleLoan = floor(goldValue × min(plan.maxLtv, 0.75))
+Available plans:
 
-Reference results:
+| Plan ID | Plan | Annual interest | Maximum LTV | Tenure |
+|---|---|---:|---:|---:|
+| `PLAN_BULLET_01` | Bullet Repayment | 12.0% | 70% | 12 months |
+| `PLAN_EMI_01` | Monthly EMI | 10.5% | 75% | 12 months |
 
-| Input | Expected result |
-|---|---|
-| 45g net, 22K, Monthly EMI | 41.25g pure gold; ₹288,750 gold value; ₹216,562 eligible loan |
-| 45g net, 22K, Bullet | ₹288,750 gold value; ₹202,125 eligible loan |
-| 10g net, 18K, Monthly EMI | 7.5g pure gold; ₹52,500 gold value; ₹39,375 eligible loan |
+Example: 45 g net weight, 22K, Monthly EMI, and the mock rate produce 41.25 g pure gold, ₹288,750 gold value, and ₹216,562 eligible loan (rounded down to a whole rupee).
 
-The quote endpoint reports an indicative eligible amount, not a calculated EMI or final repayment schedule.
+The quote is indicative only. It does not calculate a complete repayment schedule or determine real lender eligibility.
 
-## API
+## API reference
 
-Base path: /api/v1
+Base path: `/api/v1`
 
 | Method | Endpoint | Purpose |
 |---|---|---|
-| GET | /loan-schemes | Return available seeded schemes |
-| POST | /quotes | Validate input and calculate an estimate without writing a lead |
-| POST | /leads | Revalidate, recalculate, check duplicates, and create a SUBMITTED lead; returns a top-level `applicationId` alongside the existing response shape |
-| GET | /leads | List newest applications first with mobile numbers masked |
-| PATCH | /leads/:id/status | Move a lead through the status workflow; writes an audit record atomically |
-| GET | /gold-rate | Return the cached mock gold rate (5-minute TTL) with cache metadata |
-| POST | /assistant/chat | Run the tool-using assistant |
-| POST | /assistant/confirm | Submit a prepared application after explicit confirmation |
+| GET | `/loan-schemes` | Retrieve available seeded schemes |
+| POST | `/quotes` | Validate and calculate a quote without creating a lead |
+| POST | `/leads` | Revalidate, recalculate, check duplicates, and create an application |
+| GET | `/leads` | List newest applications first with mobile numbers masked |
+| PATCH | `/leads/:id/status` | Enforce a status transition and write audit history |
+| GET | `/gold-rate` | Return the cached mock rate and cache metadata |
+| POST | `/assistant/chat` | Run the tool-using assistant |
+| POST | `/assistant/confirm` | Submit a prepared application after explicit confirmation |
 
-### Validation and integrity
+Typical responses include HTTP 201 for successful creation, 400 for invalid input, 404 for an unknown resource or scheme, 409 for duplicate applications or conflicting requests, and 429 when the lead-creation rate limit is exceeded.
 
-- Applicant name: 2–60 ASCII letters/spaces.
-- Indian mobile: ^[6-9]\d{9}$.
-- Weights: 0 < net ≤ gross ≤ 1000g.
-- Karat: 18, 22, or 24.
-- Unknown plan: 404; invalid input: 400; duplicate mobile within seven days: 409.
-- Successful lead creation: 201 with a top-level `applicationId` and the existing `application` object (kept for compatibility).
-- Errors return a consistent error object with code, message, and fields, plus a top-level message for simple clients.
-- Quote endpoint does not create a lead; the server recomputes the quote during submission.
-- Transaction-scoped PostgreSQL advisory locking protects the seven-day duplicate check against concurrent requests.
-- Mobile numbers are masked in lead-list responses.
-- POST /leads also accepts an optional Idempotency-Key header for safe retries; see the next section.
+## Reliability and data integrity
 
-### Idempotent lead submission
+### Duplicate protection and idempotency
+Lead creation checks for an application using the same mobile number in the preceding seven days. Transaction-scoped PostgreSQL advisory locking protects this check against concurrent requests.
 
-POST /api/v1/leads accepts an optional `Idempotency-Key` request header so clients can retry submissions safely.
+The optional `Idempotency-Key` header makes retries safe. Equivalent requests with the same key replay the stored response; using the same key with a different payload returns HTTP 409. Idempotency results are persisted transactionally with the lead. A separate retention-cleanup command is opt-in, previews by default, and is never run automatically on startup or in CI. See the API workspace scripts for its options.
 
-Header contract:
+### Status workflow and audit history
+Allowed transitions are:
+- `SUBMITTED → UNDER_REVIEW`
+- `UNDER_REVIEW → APPROVED` or `REJECTED`
 
-- Optional. Requests without the header behave exactly as before.
-- 1–255 characters, using only letters, digits, and the characters `. _ ~ : -`.
-- An invalid key (empty, longer than 255 characters, or containing other characters) returns 400 with code `IDEMPOTENCY_KEY_INVALID`.
+Approved and rejected states are terminal. Invalid transitions are rejected. The status change and its append-only `LeadStatusHistory` row are written in the same transaction, with concurrent transitions for a lead serialized using an advisory lock.
 
-Behavior:
+### Mock gold-rate cache
+`GET /api/v1/gold-rate` returns the configured mock rate, source `mock-reference`, currency, and five-minute cache metadata. It is not a live market feed.
 
-- The first request with a key runs normally. Its key, a canonical SHA-256 fingerprint of the validated payload, the response status, and the response body are persisted in PostgreSQL in the same transaction that creates the lead, so the record and the idempotency result commit or roll back atomically.
-- Repeating the same key with an equivalent validated request returns the original HTTP status with a byte-identical response body, sets an `Idempotency-Replayed: true` header, and does not create another lead.
-- Reusing a key with a different validated payload returns 409 with code `IDEMPOTENCY_KEY_REUSED`.
-- Concurrent requests that share a key are handled with the primary-key uniqueness constraint plus transactions: one request produces the result and the others replay it (or receive 409 for a mismatched payload). No duplicate leads are created.
-- Terminal results (201 success, 404 unknown scheme, and the 409 seven-day duplicate-mobile rejection) are stored and replayed consistently, so duplicate protection stays active even when idempotency keys are used.
-- Field-validation failures (400) and invalid keys never consume the key; a corrected retry with the same key proceeds normally.
-- Persisted response bodies contain only the existing masked mobile representation (for example `9876XXXX10`), and the stored fingerprint is a SHA-256 hash; raw applicant details are not logged.
+### Rate limiting
+`POST /api/v1/leads` supports configurable in-process rate limiting and returns HTTP 429 with a `Retry-After` header when the configured limit is exceeded. It is scoped to lead creation and works alongside duplicate protection and idempotency. In-process limits are intended for this single-instance demo, not as a distributed production rate limiter.
 
-Example request:
-
-    curl -X POST http://localhost:4000/api/v1/leads \
-      -H "Content-Type: application/json" \
-      -H "Idempotency-Key: order-2026-10-10-0001" \
-      -d '{"name":"Ramesh Babu","mobile":"8907682981","netWeightGrams":45,"grossWeightGrams":50,"karat":22,"schemeId":"PLAN_EMI_01"}'
-
-Retrying the identical request (same key, same payload) returns the same 201 response with `Idempotency-Replayed: true`; sending a different payload under the same key returns 409 `IDEMPOTENCY_KEY_REUSED`.
-
-#### Retention and cleanup
-
-Idempotency records replay indefinitely until an operator runs the bundled cleanup command; nothing expires automatically, and the API never deletes records itself. The supported retention window is 48 hours (configurable from 1 to 167 hours; the command rejects anything higher so cleanup can never outrun the seven-day duplicate-mobile protection).
-
-Why a purged key cannot create a duplicate lead: a successful lead and its idempotency record commit in the same transaction and share the same database timestamp, so while the record is younger than seven days the lead is too. After cleanup, a retry within seven days of the original submission re-executes and is stopped by the seven-day duplicate-mobile check (409 `DUPLICATE_APPLICATION`) instead of creating a second lead; a later retry follows the normal seven-day rule. Once a key is purged the server no longer recognizes it: a different payload under that key is no longer reported as `IDEMPOTENCY_KEY_REUSED`, and an equivalent retry re-executes subject to the duplicate-mobile rule above. After seven days, a resubmission behaves exactly like any same-mobile submission past the protection window.
-
-Cleanup is an explicit, opt-in maintenance command that is disabled by default and is never run on API startup or in CI. It previews by default (no rows are deleted) and is bounded per run:
-
-    # Dry run: list eligible record counts and sample keys, delete nothing
-    npm run purge:idempotency --workspace=@tglobal/api
-
-    # Delete eligible records (default 48h window, at most 1000 per run)
-    npm run purge:idempotency --workspace=@tglobal/api -- --apply
-
-    # Tune the window and batch size
-    npm run purge:idempotency --workspace=@tglobal/api -- --apply --older-than-hours=24 --limit=500
-
-The purge selects records older than the cutoff through the `IdempotencyRecord_createdAt_idx` index (added by an additive migration) in ascending age order, capped by `--limit`, so each run performs a small bounded delete that is safe to repeat or run concurrently.
-
-### Lead status workflow and audit log
-
-PATCH /api/v1/leads/:id/status moves a lead through an explicit, server-enforced workflow, and every accepted transition is recorded in an append-only `LeadStatusHistory` table.
-
-Allowed transitions (anything else is rejected):
-
-- `SUBMITTED` → `UNDER_REVIEW`
-- `UNDER_REVIEW` → `APPROVED` or `REJECTED`
-- `APPROVED` and `REJECTED` are terminal.
-
-Behavior:
-
-- The status update and its audit row (`leadId`, `fromStatus`, `toStatus`, `createdAt`) commit in the same PostgreSQL transaction, so history can never show a transition that was not applied, or an applied one not recorded. Audit rows are only inserted, never updated or deleted.
-- Transitions for the same lead are serialized with a transaction-scoped advisory lock, so two concurrent identical requests produce one success and one 409, with exactly one audit row.
-- Unknown application id: 404 `LEAD_NOT_FOUND`; invalid or unknown `toStatus`: 400 `VALIDATION_ERROR`; a known status that is not reachable from the current one: 409 `INVALID_TRANSITION` with `currentStatus` and `allowedTransitions`.
-- The demo applications dashboard filters leads by status in addition to plan.
-- The migration is additive; existing leads keep their current `SUBMITTED` status and no history rows are backfilled for them.
-
-Example request:
-
-    curl -X PATCH http://localhost:4000/api/v1/leads/<application-id>/status \
-      -H "Content-Type: application/json" \
-      -d '{"toStatus":"UNDER_REVIEW"}'
-
-### Cached mock gold rate
-
-GET /api/v1/gold-rate returns the portal's configured reference rate (`ratePerGramRupees: 7000`, `source: "mock-reference"`, `currency: "INR"`) behind an explicit 5-minute in-process TTL cache. The response includes `cache.hit`, `cache.ttlSeconds`, and `expiresAt`; repeated reads inside the TTL are served from memory. This is mock data derived from the same constant the quote calculator uses — there is no live market feed. The borrower portal's rate card reads this endpoint and falls back to the previous hardcoded value when the API is unreachable.
-
-## Local setup
+## Run locally
 
 ### Prerequisites
-
 - Node.js 22 and npm.
-- PostgreSQL 17, locally or through Docker.
-- A Groq API key for live assistant conversations. Automated tests and production builds do not require a live model key.
+- PostgreSQL 17, either locally or through Docker.
+- A Groq API key for live AI conversations.
 
-### Install and configure
+### Setup
+Run commands from the repository root:
 
-From PowerShell:
+```powershell
+npm ci
+Copy-Item .env.example apps/api/.env
+```
 
-    git clone https://github.com/Sanjayram3269/tglobal-gold-loan-portal.git
-    cd tglobal-gold-loan-portal
-    npm ci
-    Copy-Item .env.example apps/api/.env
+Edit `apps/api/.env` and set `DATABASE_URL` and the server-side `GROQ_API_KEY`. Keep this file local and never commit it. The tracked `.env.example` contains placeholders only.
 
-Edit apps/api/.env and set your PostgreSQL DATABASE_URL and server-side GROQ_API_KEY. Keep this file local; never commit it.
+Apply migrations and seed the schemes:
 
-Apply migrations and seed the plans:
+```powershell
+npm exec --workspace=@tglobal/api -- prisma migrate deploy
+npm run seed --workspace=@tglobal/api
+```
 
-    npm exec --workspace=@tglobal/api -- prisma migrate deploy
-    npm run seed --workspace=@tglobal/api
+Start the API and frontend together:
 
-Start the API and frontend:
+```powershell
+npm run dev
+```
 
-    npm run dev
+Open the Vite URL printed in the terminal. The API defaults to port 4000; Vite commonly uses port 5173 but may select another available port.
 
-Open the Vite URL printed in the terminal. The API defaults to port 4000; Vite usually uses 5173, but may choose another available port.
+### Environment variables
 
-## Environment variables
+| Variable | Purpose |
+|---|---|
+| `DATABASE_URL` | API PostgreSQL connection string |
+| `PORT` | API port; defaults to 4000 |
+| `WEB_ORIGIN` | Allowed browser origin(s) |
+| `GROQ_API_KEY` | Server-side secret for live AI calls |
+| `GROQ_MODEL` | Groq model ID; defaults to `openai/gpt-oss-20b` |
+| `VITE_API_URL` | Public API base URL for the frontend build; defaults to `http://localhost:4000` |
 
-| Variable | Used by | Purpose |
-|---|---|---|
-| DATABASE_URL | API | PostgreSQL connection string |
-| PORT | API | API listen port; defaults to 4000 |
-| WEB_ORIGIN | API | Comma-separated allowed browser origins |
-| GROQ_API_KEY | API only | Secret key for live AI calls |
-| GROQ_MODEL | API | Groq model ID; defaults to openai/gpt-oss-20b |
-| VITE_API_URL | Frontend build | Public API base URL; defaults to http://localhost:4000 |
+Never put secrets in `VITE_*` variables because Vite embeds them in client-side assets.
 
-Never place secrets in variables prefixed with VITE_: Vite embeds those values in client-side assets. If a key has been committed or exposed, revoke and rotate it.
+## Docker Compose
 
-## Test and build
+An optional Compose setup and API/web Dockerfiles are included. See [docs/DOCKER_COMPOSE.md](docs/DOCKER_COMPOSE.md) for configuration, environment variables, and startup instructions.
 
-    npm ci
-    npm test
-    npm run build
-    npm run lint
+Validate the Compose configuration with:
 
-**Latest local verification (2026-10-10):** npm test passed 72 tests across six files; npm run build passed for API and frontend; npm run lint passed; npm audit reported 0 vulnerabilities; prisma validate, prisma generate, and prisma migrate status all passed against PostgreSQL 17 (four applied migrations, schema up to date). CI runs API tests and production builds; it does not run live-model evaluations or provision a fresh PostgreSQL service.
+```powershell
+docker compose config
+```
 
-See:
-- [AI evaluation results](docs/AI_EVALUATIONS.md)
-- [AI-assisted development log](AI_LOG.md)
-- [Architecture notes](ARCHITECTURE.md)
-- [GitHub Actions](https://github.com/Sanjayram3269/tglobal-gold-loan-portal/actions)
+This checks Compose configuration but does **not** start containers or prove the full stack works. To start the stack, follow the documented Compose instructions and inspect `docker compose ps` and the service logs. Do not delete database volumes unless you explicitly intend to remove their data.
 
-## Bonus scope
+## Tests and verification
 
-The assignment makes bonuses optional and says they do not replace required work. Implemented and manually checked in this project:
+Run from the repository root:
 
-- **Concurrency-safe duplicate protection:** PostgreSQL transaction-scoped advisory locks protect concurrent requests for the same mobile.
-- **Idempotency-Key replay:** POST /leads persists response fingerprints in PostgreSQL; retries replay byte-identical responses, mismatched reuse is rejected, and an opt-in bounded retention cleanup command purges old records safely.
-- **Lead status workflow with audit log:** explicit transitions enforced server-side, recorded atomically in an append-only history table with per-lead advisory locking.
-- **Cached gold-rate endpoint:** the mock reference rate is served through an explicit 5-minute TTL cache with deterministic cache tests.
-- **Single-use confirmation:** confirmation tokens expire after ten minutes and are consumed before the database write; unit tests cover replay attempts.
-- **Prompt-injection handling and multilingual conversation:** manual checks for prompt injection and Hinglish are recorded in the evaluation report.
-- **Change-mind flow:** cancelling at the review step leaves the lead count unchanged, per manual test.
-- **CI and architecture documentation:** GitHub Actions runs automated tests/builds; architecture and request flow are documented.
+```powershell
+npm test
+npm run lint
+npm run build
+npm audit
+```
 
-Not implemented or not claimed as complete:
+The latest documented local verification on 2026-10-10 reported 72/72 tests passing across six Vitest files, successful lint and API/frontend production builds, zero vulnerabilities reported by `npm audit`, and successful Prisma validation, generation, and migration-status checks against PostgreSQL 17.
 
-- Fourth check_existing_application tool.
-- Streaming assistant responses and visible tool-status chips.
-- Ten-plus automated live-model evaluations or an npm run eval runner.
-- Appraisal-slip image extraction or natural-language admin filtering.
-- API rate limiting.
-- Admin authentication/role-based access control.
-- A full-stack Docker Compose deployment and two-minute demo video.
+GitHub Actions runs automated tests and production builds. Check the Actions page for the status of the current commit:
+[GitHub Actions](https://github.com/Sanjayram3269/tglobal-gold-loan-portal/actions).
+
+Live-model conversation evaluations are manual observations documented separately; CI does not call the live model. Compose configuration validation should not be confused with a successful container startup.
+
+## Documentation
+
+- [Architecture](ARCHITECTURE.md) — components, request flows, data integrity, and limitations.
+- [AI development log](AI_LOG.md) — AI tools, representative prompts, a generated-code issue, correction, and regression tests.
+- [AI evaluations](docs/AI_EVALUATIONS.md) — required conversation scenarios and manual observations.
+- [Docker Compose guide](docs/DOCKER_COMPOSE.md) — optional container setup.
+- [Demo script](docs/DEMO.md) — suggested walkthrough and recording checklist.
+- [.env.example](.env.example) — environment-variable template with no real secrets.
 
 ## Known limitations and security notes
 
-- Fixed mock gold rate; no live market feed or jewellery-authenticity valuation.
-- No real loan approval, identity verification, collateral verification, credit assessment, or repayment-schedule calculation.
-- Admin list endpoint is unauthenticated; do not use with real applicant information.
-- Confirmation tokens are stored in process memory, expire after ten minutes, and are lost on restart. This is not durable across multiple API instances.
-- Live-model evaluations are manual observations and are not part of CI.
-- `npm audit` reports 0 vulnerabilities as of 2026-10-10; the documented `overrides` pin Prisma-related packages to adapter-backported patch releases. Review audit details again before any production deployment.
+This repository is an assignment demo, not a production lending system.
 
-## Repository structure
+- The gold rate is mocked; there is no live market feed or jewellery-authenticity valuation.
+- No actual lending decision, identity verification, collateral verification, credit assessment, or full repayment schedule is provided.
+- The admin applications view and lead-list API have no authentication or authorization. Do not use them with real applicant data.
+- Confirmation tokens are held in process memory, expire after ten minutes, and are lost on restart; they are not shared across multiple API instances.
+- Rate limiting is in-process and is not distributed across multiple API instances.
+- Live-model evaluations are manual and are not part of CI.
+- Optional features not implemented include a fourth existing-application tool, streamed assistant responses/tool-status UI, appraisal-slip image extraction, and admin authentication.
 
-    .
-    ├── .github/workflows/ci.yml
-    ├── apps/
-    │   ├── api/
-    │   │   ├── prisma/              # Schema, migration and seed
-    │   │   ├── src/domain/          # Financial calculator
-    │   │   ├── src/services/        # Assistant, confirmation, gold-rate cache
-    │   │   └── tests/               # Six Vitest files in total
-    │   └── web/src/                 # React portal and assistant widget
-    ├── ARCHITECTURE.md
-    ├── docs/AI_EVALUATIONS.md
-    ├── AI_LOG.md
-    ├── .env.example
-    ├── package.json
-    └── README.md
-
-## Final hand-in checklist
-
-- [x] Core API, calculation, persistence, borrower form, assistant, and applications view.
-- [x] Server-side validation, scheme lookup, duplicate rejection, masked mobile numbers, and explicit AI confirmation.
-- [x] Unit/HTTP tests; latest local result: 72/72 passing across six files.
-- [x] API and frontend production builds pass locally.
-- [x] .env.example, AI_LOG.md, AI evaluation report, Prisma migration/seed, and CI workflow committed.
-- [x] Required and bonus manual conversation scenarios recorded in AI_EVALUATIONS.md.
-- [x] Idempotency-Key replay, lead status workflow with audit log, and cached gold-rate endpoint implemented with tests.
-- [x] npm audit reports 0 vulnerabilities (Prisma advisories addressed via documented version overrides).
-- [x] Latest verified GitHub Actions run passed on the final corrected HEAD (see the repository Actions page for the exact run number and URL).
-- [x] POST /api/v1/leads rate limiting implemented with configurable limits, HTTP 429 JSON responses, Retry-After, and deterministic tests; does not bypass Idempotency-Key replay or duplicate protection.
-- [ ] Add authentication, monitoring, and production deployment hardening before production use.
+Before production use, add authentication and authorization, privacy controls, distributed rate limiting, operational monitoring, and a live gold-rate provider with appropriate validation and failure handling.
