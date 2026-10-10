@@ -10,7 +10,7 @@ and the video still needs to be recorded separately.
 
 ## Final state to demonstrate
 
-- Repository HEAD: 308978a
+- Repository HEAD: 6bfa87d
 - Branch: main
 - Tracked tree clean except `.freebuff/`.
 - `git diff --check` clean.
