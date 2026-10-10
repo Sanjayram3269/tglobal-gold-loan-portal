@@ -500,6 +500,7 @@ app.post("/api/v1/leads", async (req, res, next) => {
 
       const body = {
         message: "Application submitted successfully",
+        applicationId: lead.id,
         application: {
           id: lead.id,
           name: lead.name,

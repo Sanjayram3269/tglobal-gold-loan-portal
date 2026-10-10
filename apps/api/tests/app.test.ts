@@ -217,12 +217,15 @@ describe("HTTP API", () => {
       .send(validApplication);
 
     expect(response.status).toBe(201);
+    expect(response.body.message).toBe("Application submitted successfully");
+    expect(response.body.applicationId).toBe("lead-test-001");
     expect(response.body.application).toMatchObject({
       id: "lead-test-001",
       mobile: "9876XXXX10",
       eligibleLoanRupees: 216562,
       status: "SUBMITTED",
     });
+    expect(response.body.applicationId).toBe(response.body.application.id);
     expect(tx.lead.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({

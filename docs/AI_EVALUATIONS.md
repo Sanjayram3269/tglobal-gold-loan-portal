@@ -27,8 +27,8 @@
 
 ## Automated verification
 
-- Local verification on 2026-10-10: fresh npm ci completed, 36/36 tests passed across four Vitest files, and API plus frontend production builds passed.
-- GitHub Actions run #37 passed for commit 8332d434da61705402bcbe40b52a21a7cdf009ec.
+- Local verification on 2026-10-10: 60/60 tests passed across five Vitest files; lint, API and frontend production builds, `npm audit` (0 vulnerabilities), and Prisma validate/generate/migrate status all passed.
+- GitHub Actions run #45 passed for commit eab6bba6c575d3862ecbf31781177e0096acf489.
 - These conversation evaluations are manual observations, not automated live-model tests; CI does not call the live model or provision a fresh PostgreSQL service.
 
 ## Important interpretation

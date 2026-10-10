@@ -26,17 +26,18 @@ The test was corrected to use the actual service contract. Regression tests cove
 
 - Calculator tests cover the reference Monthly EMI, Bullet Repayment, 18K calculations and invalid weight boundaries.
 - Assistant-confirmation tests cover the explicit-confirmation side-effect boundary, declined confirmation, token replay, duplicate detection, unknown schemes and invalid weights.
-- HTTP tests cover health, seeded schemes, pure quote calculation, invalid weights, unknown schemes, lead creation, duplicate conflict, masked/newest-first lead listing, assistant payload validation, and sanitized not-found responses.
-- **Latest local verification (2026-10-10):** npm ci completed; npm test passed **36/36 tests across four test files**; npm run build passed for both API TypeScript and frontend TypeScript/Vite production build.
-- **GitHub Actions:** [Run #34](https://github.com/Sanjayram3269/tglobal-gold-loan-portal/actions/runs/38037015978) succeeded for commit a31e7f27d49a14c018e26ab1aa0660edfc334962.
+- HTTP tests cover health, seeded schemes, pure quote calculation, invalid weights, unknown schemes, lead creation, duplicate conflict, masked/newest-first lead listing, assistant payload validation, sanitized not-found responses, and Idempotency-Key replay/fingerprint-mismatch/concurrent-conflict/database-failure behavior.
+- **Latest local verification (2026-10-10):** npm test passed **60/60 tests across five Vitest files** (loan calculator, API routes, assistant confirmation, idempotency/retention); npm run lint and npm run build passed for API TypeScript and frontend TypeScript/Vite production build; `npm audit` reported 0 vulnerabilities; Prisma validate/generate/migrate status passed against PostgreSQL 17.
+- **GitHub Actions:** [Run #45](https://github.com/Sanjayram3269/tglobal-gold-loan-portal/actions/runs/38051398536) succeeded for commit eab6bba6c575d3862ecbf31781177e0096acf489.
 - Manual live assistant observations for the five required conversation scenarios and four bonus checks are recorded in [docs/AI_EVALUATIONS.md](docs/AI_EVALUATIONS.md). These are not automated live-model tests and are not run by CI.
 
 ## Limitations and follow-up
 
 - The Groq-backed conversation requires a valid server-side GROQ_API_KEY; tests/build do not require a live model key.
-- The latest dependency installation reported five high-severity npm audit findings. The affected dependency paths have not been fully investigated. Do not apply a forced breaking upgrade as a shortcut; review advisories and test compatible upgrades separately.
+- `npm audit` reports 0 vulnerabilities as of 2026-10-10. The documented `overrides` pin Prisma-related packages to adapter-backported patch releases covering the underlying advisories; no secret or key material was found in the repository.
 - Confirmation tokens are held in process memory, expire after ten minutes, and are lost on API restart; they are not durable across multiple API instances.
 - The demo applications view and leads endpoint are not protected by authentication/authorization. Do not use with real applicant data until access controls, rate limiting, and privacy controls are implemented.
 - The gold price is a mock reference rate, not a live market feed. The quote endpoint does not calculate repayment schedules.
 - Prompt-injection, Hinglish, change-mind, and repeated-confirmation conversation checks were performed manually; they are not part of the automated live-model CI suite.
-- Optional items not implemented include Idempotency-Key support, a durable lead status workflow/audit log, cached rate endpoint, fourth existing-application tool, streaming/tool-status UI, image extraction, rate limiting, admin authentication, and a demo video.
+- Idempotency-Key replay support and the opt-in 48-hour retention cleanup are implemented and tested (routes covered by the idempotency tests; cleanup via `npm run retention:idempotency` and the documented `RETENTION_IDEMPOTENCY_*` variables).
+- Optional items still not implemented: a durable lead status workflow/audit log, a cached gold-rate endpoint, fourth existing-application tool, streaming/tool-status UI, image extraction, rate limiting, admin authentication, and a demo video.
