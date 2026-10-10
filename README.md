@@ -135,6 +135,25 @@ Example request:
 
 Retrying the identical request (same key, same payload) returns the same 201 response with `Idempotency-Replayed: true`; sending a different payload under the same key returns 409 `IDEMPOTENCY_KEY_REUSED`.
 
+#### Retention and cleanup
+
+Idempotency records replay indefinitely until an operator runs the bundled cleanup command; nothing expires automatically, and the API never deletes records itself. The supported retention window is 48 hours (configurable from 1 to 167 hours; the command rejects anything higher so cleanup can never outrun the seven-day duplicate-mobile protection).
+
+Why a purged key cannot create a duplicate lead: a successful lead and its idempotency record commit in the same transaction and share the same database timestamp, so while the record is younger than seven days the lead is too. After cleanup, a retry within seven days of the original submission re-executes and is stopped by the seven-day duplicate-mobile check (409 `DUPLICATE_APPLICATION`) instead of creating a second lead; a later retry follows the normal seven-day rule. Once a key is purged the server no longer recognizes it: a different payload under that key is no longer reported as `IDEMPOTENCY_KEY_REUSED`, and an equivalent retry re-executes subject to the duplicate-mobile rule above. After seven days, a resubmission behaves exactly like any same-mobile submission past the protection window.
+
+Cleanup is an explicit, opt-in maintenance command that is disabled by default and is never run on API startup or in CI. It previews by default (no rows are deleted) and is bounded per run:
+
+    # Dry run: list eligible record counts and sample keys, delete nothing
+    npm run purge:idempotency --workspace=@tglobal/api
+
+    # Delete eligible records (default 48h window, at most 1000 per run)
+    npm run purge:idempotency --workspace=@tglobal/api -- --apply
+
+    # Tune the window and batch size
+    npm run purge:idempotency --workspace=@tglobal/api -- --apply --older-than-hours=24 --limit=500
+
+The purge selects records older than the cutoff through the `IdempotencyRecord_createdAt_idx` index (added by an additive migration) in ascending age order, capped by `--limit`, so each run performs a small bounded delete that is safe to repeat or run concurrently.
+
 ## Local setup
 
 ### Prerequisites
@@ -185,7 +204,7 @@ Never place secrets in variables prefixed with VITE_: Vite embeds those values i
     npm run build
     npm run lint
 
-**Latest local verification:** npm test passed 48 tests across four files; npm run build passed for API and frontend; npm run lint passed; npm audit reported 0 vulnerabilities; prisma validate, prisma generate, and prisma migrate status all passed against PostgreSQL 17. CI runs API tests and production builds; it does not run live-model evaluations or provision a fresh PostgreSQL service.
+**Latest local verification:** npm test passed 60 tests across five files; npm run build passed for API and frontend; npm run lint passed; npm audit reported 0 vulnerabilities; prisma validate, prisma generate, and prisma migrate status all passed against PostgreSQL 17. CI runs API tests and production builds; it does not run live-model evaluations or provision a fresh PostgreSQL service.
 
 See:
 - [AI evaluation results](docs/AI_EVALUATIONS.md)

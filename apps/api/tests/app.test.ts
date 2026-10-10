@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import request from "supertest";
+import { purgeExpiredIdempotencyRecords } from "../src/services/idempotency-retention.js";
 
 const { prismaMock, assistantMock, confirmationMock } = vi.hoisted(() => ({
   prismaMock: {
@@ -17,6 +18,8 @@ const { prismaMock, assistantMock, confirmationMock } = vi.hoisted(() => ({
     idempotencyRecord: {
       findUnique: vi.fn(),
       create: vi.fn(),
+      findMany: vi.fn(),
+      deleteMany: vi.fn(),
     },
   },
   assistantMock: {
@@ -137,6 +140,8 @@ describe("HTTP API", () => {
     prismaMock.lead.create.mockResolvedValue(createdLead);
     prismaMock.idempotencyRecord.findUnique.mockResolvedValue(null);
     prismaMock.idempotencyRecord.create.mockResolvedValue(null);
+    prismaMock.idempotencyRecord.findMany.mockResolvedValue([]);
+    prismaMock.idempotencyRecord.deleteMany.mockResolvedValue({ count: 0 });
 
     assistantMock.runGroqAssistant.mockResolvedValue({
       reply: "I can help with gold loan schemes.",
@@ -524,6 +529,129 @@ describe("HTTP API", () => {
         (response) => response.headers["idempotency-replayed"] === "true",
       );
       expect(replayed).toHaveLength(1);
+    });
+
+    it("cleanup purges expired keys while retained keys keep replaying safely", async () => {
+      const t0 = new Date("2026-10-10T12:00:00.000Z");
+      const hourMs = 60 * 60 * 1000;
+      const state: { records: any[] } = { records: [] };
+
+      prismaMock.idempotencyRecord.findUnique.mockImplementation(
+        async ({ where }: { where: { key: string } }) =>
+          state.records.find((record) => record.key === where.key) ?? null,
+      );
+      tx.idempotencyRecord.create.mockImplementation(
+        async ({ data }: { data: any }) => {
+          const record = {
+            ...data,
+            createdAt: new Date(t0),
+            updatedAt: new Date(t0),
+          };
+          state.records.push(record);
+          return record;
+        },
+      );
+      prismaMock.idempotencyRecord.findMany.mockImplementation(
+        async (args: any) =>
+          state.records
+            .filter((record) => record.createdAt < args.where.createdAt.lt)
+            .sort(
+              (left, right) =>
+                left.createdAt.getTime() - right.createdAt.getTime(),
+            )
+            .slice(0, args.take)
+            .map((record) => ({
+              key: record.key,
+              createdAt: record.createdAt,
+            })),
+      );
+      prismaMock.idempotencyRecord.deleteMany.mockImplementation(
+        async (args: any) => {
+          const keys = new Set<string>(args.where.key.in);
+          const before = state.records.length;
+          state.records = state.records.filter(
+            (record) =>
+              !(
+                keys.has(record.key) &&
+                record.createdAt < args.where.createdAt.lt
+              ),
+          );
+          return { count: before - state.records.length };
+        },
+      );
+
+      const expiredPayload = { ...validApplication, mobile: "9812345011" };
+      const retainedPayload = { ...validApplication, mobile: "9812345012" };
+
+      const firstExpired = await request(app)
+        .post("/api/v1/leads")
+        .set("Idempotency-Key", "cleanup-expired-key")
+        .send(expiredPayload);
+      const firstRetained = await request(app)
+        .post("/api/v1/leads")
+        .set("Idempotency-Key", "cleanup-retained-key")
+        .send(retainedPayload);
+
+      expect(firstExpired.status).toBe(201);
+      expect(firstRetained.status).toBe(201);
+
+      // The retained record is younger than the expired one.
+      const retained = state.records.find(
+        (record) => record.key === "cleanup-retained-key",
+      );
+      retained.createdAt = new Date(t0.getTime() + 47 * hourMs);
+      retained.updatedAt = retained.createdAt;
+
+      // Cleanup at t0 + 49h with the default 48h window: only the expired
+      // record is eligible; the retained one survives.
+      const purgeResult = await purgeExpiredIdempotencyRecords({
+        mode: "apply",
+        client: {
+          idempotencyRecord: {
+            findMany: prismaMock.idempotencyRecord.findMany,
+            deleteMany: prismaMock.idempotencyRecord.deleteMany,
+          },
+        },
+        now: new Date(t0.getTime() + 49 * hourMs),
+      });
+
+      expect(purgeResult.selected).toBe(1);
+      expect(purgeResult.deleted).toBe(1);
+      expect(state.records.map((record) => record.key)).toEqual([
+        "cleanup-retained-key",
+      ]);
+
+      // The purged key is forgotten: the same payload re-executes and the
+      // seven-day duplicate-mobile check stops it without a second lead.
+      tx.lead.findFirst.mockResolvedValueOnce({ id: "lead-from-expired-key" });
+      const leadCreatesBeforeRetry = tx.lead.create.mock.calls.length;
+
+      const retriedExpired = await request(app)
+        .post("/api/v1/leads")
+        .set("Idempotency-Key", "cleanup-expired-key")
+        .send(expiredPayload);
+
+      expect(retriedExpired.status).toBe(409);
+      expect(retriedExpired.body.error.code).toBe("DUPLICATE_APPLICATION");
+      expect(tx.lead.create.mock.calls.length).toBe(leadCreatesBeforeRetry);
+
+      // The retained key still replays byte-for-byte and still rejects reuse.
+      const replayRetained = await request(app)
+        .post("/api/v1/leads")
+        .set("Idempotency-Key", "cleanup-retained-key")
+        .send(retainedPayload);
+
+      expect(replayRetained.status).toBe(201);
+      expect(replayRetained.headers["idempotency-replayed"]).toBe("true");
+      expect(replayRetained.text).toBe(firstRetained.text);
+
+      const reuseRetained = await request(app)
+        .post("/api/v1/leads")
+        .set("Idempotency-Key", "cleanup-retained-key")
+        .send({ ...retainedPayload, name: "Different Applicant" });
+
+      expect(reuseRetained.status).toBe(409);
+      expect(reuseRetained.body.error.code).toBe("IDEMPOTENCY_KEY_REUSED");
     });
   });
 });
