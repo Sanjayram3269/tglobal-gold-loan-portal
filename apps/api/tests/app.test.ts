@@ -232,7 +232,7 @@ describe("HTTP API", () => {
       .send({ message: "  " });
 
     expect(response.status).toBe(400);
-    expect(response.body.error).toBe("VALIDATION_ERROR");
+    expect(response.body.error.code).toBe("VALIDATION_ERROR");
     expect(assistantMock.runGroqAssistant).not.toHaveBeenCalled();
   });
 
