@@ -1,4 +1,4 @@
-﻿import { useState } from 'react'
+import { useState } from 'react'
 import './AssistantWidget.css'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:4000'
@@ -39,7 +39,7 @@ const money = (value: number) =>
 
 function renderAssistantText(text: string) {
   const renderInline = (line: string, lineKey: string) =>
-    line.split(/(\*\*[^*]+\*\*|\*[^*]+\*|\`[^\`]+\`)/g).map((part, index) => {
+    line.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g).map((part, index) => {
       const key = `${lineKey}-${index}`;
       if (part.startsWith("**") && part.endsWith("**")) {
         return <strong key={key}>{part.slice(2, -2)}</strong>;
