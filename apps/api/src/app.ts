@@ -293,10 +293,7 @@ app.post("/api/v1/leads", async (req, res, next) => {
     });
 
     if (!scheme) {
-      return res.status(404).json({
-        error: "SCHEME_NOT_FOUND",
-        message: "The selected loan scheme was not found",
-      });
+      return apiError(res, 404, "SCHEME_NOT_FOUND", "The selected loan scheme was not found.");
     }
 
     const quote = calculateQuote(
