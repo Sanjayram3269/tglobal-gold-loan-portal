@@ -27,3 +27,8 @@ export type LoanScheme = Prisma.LoanSchemeModel
  * 
  */
 export type Lead = Prisma.LeadModel
+/**
+ * Model IdempotencyRecord
+ *
+ */
+export type IdempotencyRecord = Prisma.IdempotencyRecordModel

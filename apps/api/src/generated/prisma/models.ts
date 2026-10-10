@@ -10,4 +10,5 @@
  */
 export type * from './models/LoanScheme.js'
 export type * from './models/Lead.js'
+export type * from './models/IdempotencyRecord.js'
 export type * from './commonInputTypes.js'

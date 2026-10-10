@@ -104,6 +104,36 @@ Base path: /api/v1
 - Quote endpoint does not create a lead; the server recomputes the quote during submission.
 - Transaction-scoped PostgreSQL advisory locking protects the seven-day duplicate check against concurrent requests.
 - Mobile numbers are masked in lead-list responses.
+- POST /leads also accepts an optional Idempotency-Key header for safe retries; see the next section.
+
+### Idempotent lead submission
+
+POST /api/v1/leads accepts an optional `Idempotency-Key` request header so clients can retry submissions safely.
+
+Header contract:
+
+- Optional. Requests without the header behave exactly as before.
+- 1–255 characters, using only letters, digits, and the characters `. _ ~ : -`.
+- An invalid key (empty, longer than 255 characters, or containing other characters) returns 400 with code `IDEMPOTENCY_KEY_INVALID`.
+
+Behavior:
+
+- The first request with a key runs normally. Its key, a canonical SHA-256 fingerprint of the validated payload, the response status, and the response body are persisted in PostgreSQL in the same transaction that creates the lead, so the record and the idempotency result commit or roll back atomically.
+- Repeating the same key with an equivalent validated request returns the original HTTP status with a byte-identical response body, sets an `Idempotency-Replayed: true` header, and does not create another lead.
+- Reusing a key with a different validated payload returns 409 with code `IDEMPOTENCY_KEY_REUSED`.
+- Concurrent requests that share a key are handled with the primary-key uniqueness constraint plus transactions: one request produces the result and the others replay it (or receive 409 for a mismatched payload). No duplicate leads are created.
+- Terminal results (201 success, 404 unknown scheme, and the 409 seven-day duplicate-mobile rejection) are stored and replayed consistently, so duplicate protection stays active even when idempotency keys are used.
+- Field-validation failures (400) and invalid keys never consume the key; a corrected retry with the same key proceeds normally.
+- Persisted response bodies contain only the existing masked mobile representation (for example `9876XXXX10`), and the stored fingerprint is a SHA-256 hash; raw applicant details are not logged.
+
+Example request:
+
+    curl -X POST http://localhost:4000/api/v1/leads \
+      -H "Content-Type: application/json" \
+      -H "Idempotency-Key: order-2026-10-10-0001" \
+      -d '{"name":"Ramesh Babu","mobile":"8907682981","netWeightGrams":45,"grossWeightGrams":50,"karat":22,"schemeId":"PLAN_EMI_01"}'
+
+Retrying the identical request (same key, same payload) returns the same 201 response with `Idempotency-Replayed: true`; sending a different payload under the same key returns 409 `IDEMPOTENCY_KEY_REUSED`.
 
 ## Local setup
 
@@ -155,7 +185,7 @@ Never place secrets in variables prefixed with VITE_: Vite embeds those values i
     npm run build
     npm run lint
 
-**Latest local verification:** npm test passed 36 tests across four files; npm run build passed for API and frontend. npm run lint is available but was not included in the latest reported verification. CI runs API tests and production builds; it does not run live-model evaluations or provision a fresh PostgreSQL service.
+**Latest local verification:** npm test passed 48 tests across four files; npm run build passed for API and frontend; npm run lint passed; npm audit reported 0 vulnerabilities; prisma validate, prisma generate, and prisma migrate status all passed against PostgreSQL 17. CI runs API tests and production builds; it does not run live-model evaluations or provision a fresh PostgreSQL service.
 
 See:
 - [AI evaluation results](docs/AI_EVALUATIONS.md)

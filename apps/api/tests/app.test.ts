@@ -14,6 +14,10 @@ const { prismaMock, assistantMock, confirmationMock } = vi.hoisted(() => ({
       findFirst: vi.fn(),
       create: vi.fn(),
     },
+    idempotencyRecord: {
+      findUnique: vi.fn(),
+      create: vi.fn(),
+    },
   },
   assistantMock: {
     runGroqAssistant: vi.fn(),
@@ -62,10 +66,24 @@ const validApplication = {
 
 const tx = {
   $queryRaw: vi.fn(),
+  loanScheme: {
+    findUnique: vi.fn(),
+  },
   lead: {
     findFirst: vi.fn(),
     create: vi.fn(),
   },
+  idempotencyRecord: {
+    findUnique: vi.fn(),
+    create: vi.fn(),
+  },
+};
+
+type IdempotencyCreateData = {
+  key: string;
+  fingerprint: string;
+  responseStatus: number;
+  responseBody: string;
 };
 
 const createdLead = {
@@ -81,32 +99,44 @@ const createdLead = {
   createdAt: new Date("2026-10-09T12:00:00.000Z"),
 };
 
+async function resolveScheme({ where }: { where: { id: string } }) {
+  return where.id === emiScheme.id
+    ? emiScheme
+    : where.id === bulletScheme.id
+      ? bulletScheme
+      : null;
+}
+
 describe("HTTP API", () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
     prismaMock.$queryRaw.mockResolvedValue([{ result: 1 }]);
     prismaMock.loanScheme.findMany.mockResolvedValue([bulletScheme, emiScheme]);
-    prismaMock.loanScheme.findUnique.mockImplementation(
-      async ({ where }: { where: { id: string } }) =>
-        where.id === emiScheme.id
-          ? emiScheme
-          : where.id === bulletScheme.id
-            ? bulletScheme
-            : null,
-    );
+    prismaMock.loanScheme.findUnique.mockImplementation(resolveScheme);
 
     prismaMock.$transaction.mockImplementation(
       async (callback: (transaction: typeof tx) => Promise<unknown>) =>
         callback(tx),
     );
     tx.$queryRaw.mockResolvedValue([{ locked: 1 }]);
+    tx.loanScheme.findUnique.mockImplementation(resolveScheme);
     tx.lead.findFirst.mockResolvedValue(null);
     tx.lead.create.mockResolvedValue(createdLead);
+    tx.idempotencyRecord.findUnique.mockResolvedValue(null);
+    tx.idempotencyRecord.create.mockImplementation(
+      async ({ data }: { data: IdempotencyCreateData }) => ({
+        ...data,
+        createdAt: new Date("2026-10-10T12:00:00.000Z"),
+        updatedAt: new Date("2026-10-10T12:00:00.000Z"),
+      }),
+    );
 
     prismaMock.lead.findMany.mockResolvedValue([createdLead]);
     prismaMock.lead.findFirst.mockResolvedValue(null);
     prismaMock.lead.create.mockResolvedValue(createdLead);
+    prismaMock.idempotencyRecord.findUnique.mockResolvedValue(null);
+    prismaMock.idempotencyRecord.create.mockResolvedValue(null);
 
     assistantMock.runGroqAssistant.mockResolvedValue({
       reply: "I can help with gold loan schemes.",
@@ -240,5 +270,260 @@ describe("HTTP API", () => {
     const response = await request(app).get("/api/v1/does-not-exist");
     expect(response.status).toBe(404);
     expect(response.body.error.code).toBe("NOT_FOUND");
+  });
+
+  describe("idempotency for POST /api/v1/leads", () => {
+    const idempotencyKey = "lead-request-0001";
+
+    function stubCommittedRecord() {
+      const state: { record: any } = { record: null };
+
+      prismaMock.idempotencyRecord.findUnique.mockImplementation(
+        async () => state.record,
+      );
+      tx.idempotencyRecord.create.mockImplementation(
+        async ({ data }: { data: IdempotencyCreateData }) => {
+          state.record = {
+            ...data,
+            createdAt: new Date("2026-10-10T12:00:00.000Z"),
+            updatedAt: new Date("2026-10-10T12:00:00.000Z"),
+          };
+          return state.record;
+        },
+      );
+
+      return state;
+    }
+
+    it("rejects an invalid idempotency key with a clear 400", async () => {
+      const response = await request(app)
+        .post("/api/v1/leads")
+        .set("Idempotency-Key", "bad key with spaces!")
+        .send(validApplication);
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.code).toBe("IDEMPOTENCY_KEY_INVALID");
+      expect(tx.lead.create).not.toHaveBeenCalled();
+      expect(tx.idempotencyRecord.create).not.toHaveBeenCalled();
+    });
+
+    it("rejects an idempotency key longer than 255 characters", async () => {
+      const response = await request(app)
+        .post("/api/v1/leads")
+        .set("Idempotency-Key", "k".repeat(256))
+        .send(validApplication);
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.code).toBe("IDEMPOTENCY_KEY_INVALID");
+      expect(tx.lead.create).not.toHaveBeenCalled();
+    });
+
+    it("replays the original response for an equivalent retry without a second lead", async () => {
+      const state = stubCommittedRecord();
+
+      const first = await request(app)
+        .post("/api/v1/leads")
+        .set("Idempotency-Key", idempotencyKey)
+        .send(validApplication);
+
+      expect(first.status).toBe(201);
+      expect(state.record).toMatchObject({
+        key: idempotencyKey,
+        responseStatus: 201,
+        responseBody: expect.any(String),
+      });
+      expect(state.record.fingerprint).toMatch(/^[0-9a-f]{64}$/);
+      expect(state.record.responseBody).toContain("9876XXXX10");
+      expect(state.record.responseBody).not.toContain("9876543210");
+      expect(tx.lead.create).toHaveBeenCalledTimes(1);
+
+      const replay = await request(app)
+        .post("/api/v1/leads")
+        .set("Idempotency-Key", idempotencyKey)
+        .send(validApplication);
+
+      expect(replay.status).toBe(201);
+      expect(replay.headers["idempotency-replayed"]).toBe("true");
+      expect(replay.body).toEqual(first.body);
+      expect(tx.lead.create).toHaveBeenCalledTimes(1);
+      expect(tx.loanScheme.findUnique).toHaveBeenCalledTimes(1);
+      expect(prismaMock.idempotencyRecord.findUnique).toHaveBeenCalledTimes(2);
+    });
+
+    it("returns 409 IDEMPOTENCY_KEY_REUSED when the key carries a different payload", async () => {
+      const state = stubCommittedRecord();
+
+      const first = await request(app)
+        .post("/api/v1/leads")
+        .set("Idempotency-Key", idempotencyKey)
+        .send(validApplication);
+
+      expect(first.status).toBe(201);
+
+      const conflicting = await request(app)
+        .post("/api/v1/leads")
+        .set("Idempotency-Key", idempotencyKey)
+        .send({ ...validApplication, name: "Different Applicant" });
+
+      expect(conflicting.status).toBe(409);
+      expect(conflicting.body.error.code).toBe("IDEMPOTENCY_KEY_REUSED");
+      expect(state.record.responseStatus).toBe(201);
+      expect(tx.lead.create).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps the seven-day duplicate-mobile check active with an idempotency key", async () => {
+      const state = stubCommittedRecord();
+      tx.lead.findFirst.mockResolvedValue({ id: "existing-lead-001" });
+
+      const first = await request(app)
+        .post("/api/v1/leads")
+        .set("Idempotency-Key", idempotencyKey)
+        .send(validApplication);
+
+      expect(first.status).toBe(409);
+      expect(first.body.error.code).toBe("DUPLICATE_APPLICATION");
+      expect(first.body.existingApplicationId).toBe("existing-lead-001");
+      expect(tx.lead.create).not.toHaveBeenCalled();
+      expect(state.record).toMatchObject({ key: idempotencyKey, responseStatus: 409 });
+
+      const replay = await request(app)
+        .post("/api/v1/leads")
+        .set("Idempotency-Key", idempotencyKey)
+        .send(validApplication);
+
+      expect(replay.status).toBe(409);
+      expect(replay.body).toEqual(first.body);
+      expect(tx.lead.findFirst).toHaveBeenCalledTimes(1);
+    });
+
+    it("persists and replays an unknown-scheme 404 under the same key", async () => {
+      const state = stubCommittedRecord();
+      const payload = { ...validApplication, schemeId: "PLAN_UNKNOWN" };
+
+      const first = await request(app)
+        .post("/api/v1/leads")
+        .set("Idempotency-Key", idempotencyKey)
+        .send(payload);
+
+      expect(first.status).toBe(404);
+      expect(first.body.error.code).toBe("SCHEME_NOT_FOUND");
+      expect(state.record).toMatchObject({ key: idempotencyKey, responseStatus: 404 });
+      expect(tx.lead.create).not.toHaveBeenCalled();
+
+      const replay = await request(app)
+        .post("/api/v1/leads")
+        .set("Idempotency-Key", idempotencyKey)
+        .send(payload);
+
+      expect(replay.status).toBe(404);
+      expect(replay.headers["idempotency-replayed"]).toBe("true");
+      expect(replay.body).toEqual(first.body);
+      expect(tx.loanScheme.findUnique).toHaveBeenCalledTimes(1);
+    });
+
+    it("preserves existing behavior when no idempotency key is supplied", async () => {
+      const response = await request(app).post("/api/v1/leads").send(validApplication);
+
+      expect(response.status).toBe(201);
+      expect(response.headers["idempotency-replayed"]).toBeUndefined();
+      expect(prismaMock.idempotencyRecord.findUnique).not.toHaveBeenCalled();
+      expect(tx.idempotencyRecord.create).not.toHaveBeenCalled();
+      expect(tx.lead.create).toHaveBeenCalledTimes(1);
+    });
+
+    it("returns 500 and persists no record when the idempotency write fails", async () => {
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+      const state = stubCommittedRecord();
+      tx.idempotencyRecord.create.mockRejectedValueOnce(new Error("database unavailable"));
+
+      const failed = await request(app)
+        .post("/api/v1/leads")
+        .set("Idempotency-Key", idempotencyKey)
+        .send(validApplication);
+
+      expect(failed.status).toBe(500);
+      expect(failed.body.error.code).toBe("INTERNAL_SERVER_ERROR");
+      expect(state.record).toBeNull();
+      expect(consoleError).toHaveBeenCalled();
+
+      const retry = await request(app)
+        .post("/api/v1/leads")
+        .set("Idempotency-Key", idempotencyKey)
+        .send(validApplication);
+
+      expect(retry.status).toBe(201);
+      expect(state.record).toMatchObject({ key: idempotencyKey, responseStatus: 201 });
+      consoleError.mockRestore();
+    });
+
+    it("does not write an idempotency record when the lead write fails", async () => {
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+      tx.lead.create.mockRejectedValueOnce(new Error("database unavailable"));
+
+      const failed = await request(app)
+        .post("/api/v1/leads")
+        .set("Idempotency-Key", idempotencyKey)
+        .send(validApplication);
+
+      expect(failed.status).toBe(500);
+      expect(failed.body.error.code).toBe("INTERNAL_SERVER_ERROR");
+      expect(tx.idempotencyRecord.create).not.toHaveBeenCalled();
+      consoleError.mockRestore();
+    });
+
+    it("serves concurrent duplicate-key requests from a single committed record", async () => {
+      const state: { record: any } = { record: null };
+      let reads = 0;
+      let successfulCreates = 0;
+
+      // Both requests read before either transaction has committed, then the
+      // losing insert hits the primary-key uniqueness constraint.
+      prismaMock.idempotencyRecord.findUnique.mockImplementation(async () => {
+        reads += 1;
+        return reads <= 2 ? null : state.record;
+      });
+      tx.idempotencyRecord.findUnique.mockResolvedValue(null);
+      tx.idempotencyRecord.create.mockImplementation(
+        async ({ data }: { data: IdempotencyCreateData }) => {
+          if (state.record) {
+            const conflict = new Error(
+              "Unique constraint failed on the fields: (`key`)",
+            ) as Error & { code?: string };
+            conflict.code = "P2002";
+            throw conflict;
+          }
+
+          successfulCreates += 1;
+          state.record = {
+            ...data,
+            createdAt: new Date("2026-10-10T12:00:00.000Z"),
+            updatedAt: new Date("2026-10-10T12:00:00.000Z"),
+          };
+          return state.record;
+        },
+      );
+
+      const [first, second] = await Promise.all([
+        request(app)
+          .post("/api/v1/leads")
+          .set("Idempotency-Key", idempotencyKey)
+          .send(validApplication),
+        request(app)
+          .post("/api/v1/leads")
+          .set("Idempotency-Key", idempotencyKey)
+          .send(validApplication),
+      ]);
+
+      expect(first.status).toBe(201);
+      expect(second.status).toBe(201);
+      expect(second.body).toEqual(first.body);
+      expect(successfulCreates).toBe(1);
+      expect(state.record).toMatchObject({ key: idempotencyKey, responseStatus: 201 });
+
+      const replayed = [first, second].filter(
+        (response) => response.headers["idempotency-replayed"] === "true",
+      );
+      expect(replayed).toHaveLength(1);
+    });
   });
 });

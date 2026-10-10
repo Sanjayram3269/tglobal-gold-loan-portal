@@ -52,7 +52,8 @@ export const AnyNull = runtime.AnyNull
 
 export const ModelName = {
   LoanScheme: 'LoanScheme',
-  Lead: 'Lead'
+  Lead: 'Lead',
+  IdempotencyRecord: 'IdempotencyRecord'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -100,6 +101,18 @@ export const LeadScalarFieldEnum = {
 } as const
 
 export type LeadScalarFieldEnum = (typeof LeadScalarFieldEnum)[keyof typeof LeadScalarFieldEnum]
+
+
+export const IdempotencyRecordScalarFieldEnum = {
+  key: 'key',
+  fingerprint: 'fingerprint',
+  responseStatus: 'responseStatus',
+  responseBody: 'responseBody',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type IdempotencyRecordScalarFieldEnum = (typeof IdempotencyRecordScalarFieldEnum)[keyof typeof IdempotencyRecordScalarFieldEnum]
 
 
 export const SortOrder = {

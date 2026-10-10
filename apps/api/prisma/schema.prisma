@@ -38,3 +38,12 @@ model Lead {
   @@index([mobile, createdAt])
   @@index([createdAt])
 }
+
+model IdempotencyRecord {
+  key            String   @id @db.VarChar(255)
+  fingerprint    String   @db.VarChar(64)
+  responseStatus Int
+  responseBody   String   @db.Text
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
