@@ -74,6 +74,11 @@ const tx = {
   },
   lead: {
     findFirst: vi.fn(),
+    findUnique: vi.fn(),
+    update: vi.fn(),
+    create: vi.fn(),
+  },
+  leadStatusHistory: {
     create: vi.fn(),
   },
   idempotencyRecord: {
@@ -125,6 +130,26 @@ describe("HTTP API", () => {
     tx.$queryRaw.mockResolvedValue([{ locked: 1 }]);
     tx.loanScheme.findUnique.mockImplementation(resolveScheme);
     tx.lead.findFirst.mockResolvedValue(null);
+    tx.lead.findUnique.mockResolvedValue({
+      id: "lead-test-001",
+      status: "SUBMITTED",
+    });
+    tx.lead.update.mockImplementation(
+      async ({
+        where,
+        data,
+      }: {
+        where: { id: string };
+        data: { status: string };
+      }) => ({ id: where.id, status: data.status }),
+    );
+    tx.leadStatusHistory.create.mockImplementation(
+      async ({ data }: { data: Record<string, string> }) => ({
+        id: "history-001",
+        ...data,
+        createdAt: new Date("2026-10-10T12:00:00.000Z"),
+      }),
+    );
     tx.lead.create.mockResolvedValue(createdLead);
     tx.idempotencyRecord.findUnique.mockResolvedValue(null);
     tx.idempotencyRecord.create.mockImplementation(
@@ -655,6 +680,168 @@ describe("HTTP API", () => {
 
       expect(reuseRetained.status).toBe(409);
       expect(reuseRetained.body.error.code).toBe("IDEMPOTENCY_KEY_REUSED");
+    });
+  });
+
+  describe("lead status workflow (PATCH /api/v1/leads/:id/status)", () => {
+    const leadId = "123e4567-e89b-42d3-a456-426614174000";
+    const statusUrl = `/api/v1/leads/${leadId}/status`;
+
+    it("applies a valid transition and writes an audit record in the same transaction", async () => {
+      const response = await request(app)
+        .patch(statusUrl)
+        .send({ toStatus: "UNDER_REVIEW" });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({
+        id: leadId,
+        status: "UNDER_REVIEW",
+        previousStatus: "SUBMITTED",
+        historyId: "history-001",
+      });
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+      expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
+      expect(tx.lead.update).toHaveBeenCalledWith({
+        where: { id: leadId },
+        data: { status: "UNDER_REVIEW" },
+      });
+      expect(tx.leadStatusHistory.create).toHaveBeenCalledWith({
+        data: {
+          leadId,
+          fromStatus: "SUBMITTED",
+          toStatus: "UNDER_REVIEW",
+        },
+      });
+    });
+
+    it("rejects a transition that is not allowed from the current status", async () => {
+      const response = await request(app)
+        .patch(statusUrl)
+        .send({ toStatus: "APPROVED" });
+
+      expect(response.status).toBe(409);
+      expect(response.body.error.code).toBe("INVALID_TRANSITION");
+      expect(response.body.currentStatus).toBe("SUBMITTED");
+      expect(response.body.allowedTransitions).toEqual(["UNDER_REVIEW"]);
+      expect(tx.lead.update).not.toHaveBeenCalled();
+      expect(tx.leadStatusHistory.create).not.toHaveBeenCalled();
+    });
+
+    it("rejects transitions out of a terminal status", async () => {
+      tx.lead.findUnique.mockResolvedValue({ id: leadId, status: "APPROVED" });
+
+      const response = await request(app)
+        .patch(statusUrl)
+        .send({ toStatus: "REJECTED" });
+
+      expect(response.status).toBe(409);
+      expect(response.body.error.code).toBe("INVALID_TRANSITION");
+      expect(tx.lead.update).not.toHaveBeenCalled();
+      expect(tx.leadStatusHistory.create).not.toHaveBeenCalled();
+    });
+
+    it("returns 404 for an unknown application", async () => {
+      tx.lead.findUnique.mockResolvedValue(null);
+
+      const response = await request(app)
+        .patch(statusUrl)
+        .send({ toStatus: "UNDER_REVIEW" });
+
+      expect(response.status).toBe(404);
+      expect(response.body.error.code).toBe("LEAD_NOT_FOUND");
+      expect(tx.lead.update).not.toHaveBeenCalled();
+      expect(tx.leadStatusHistory.create).not.toHaveBeenCalled();
+    });
+
+    it("validates the application id, body shape, and target status", async () => {
+      const badId = await request(app)
+        .patch("/api/v1/leads/not-a-uuid/status")
+        .send({ toStatus: "UNDER_REVIEW" });
+      expect(badId.status).toBe(400);
+      expect(badId.body.error.code).toBe("VALIDATION_ERROR");
+      expect(badId.body.error.fields[0].field).toBe("id");
+
+      const missing = await request(app).patch(statusUrl).send({});
+      expect(missing.status).toBe(400);
+      expect(missing.body.error.code).toBe("VALIDATION_ERROR");
+
+      const unknownStatus = await request(app)
+        .patch(statusUrl)
+        .send({ toStatus: "HAX" });
+      expect(unknownStatus.status).toBe(400);
+      expect(unknownStatus.body.error.fields[0].field).toBe("toStatus");
+      expect(tx.lead.update).not.toHaveBeenCalled();
+    });
+
+    it("surfaces an audit-write failure as a sanitized 500 without claiming success", async () => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      tx.leadStatusHistory.create.mockRejectedValue(
+        new Error("audit write failed"),
+      );
+
+      const response = await request(app)
+        .patch(statusUrl)
+        .send({ toStatus: "UNDER_REVIEW" });
+
+      expect(response.status).toBe(500);
+      expect(response.body.error.code).toBe("INTERNAL_SERVER_ERROR");
+      expect(response.body).not.toHaveProperty("status");
+      expect(response.text).not.toContain("audit write failed");
+      expect(errorSpy).toHaveBeenCalled();
+      expect(tx.leadStatusHistory.create).toHaveBeenCalledTimes(1);
+      errorSpy.mockRestore();
+    });
+
+    it("lets only one of two concurrent identical transitions commit an audit row", async () => {
+      let currentStatus = "SUBMITTED";
+      let historyRows = 0;
+      let hold: Promise<void> = Promise.resolve();
+
+      // Emulate the PostgreSQL transaction-scoped advisory lock: the second
+      // transaction cannot start until the first one has committed.
+      prismaMock.$transaction.mockImplementation(
+        async (callback: (transaction: typeof tx) => Promise<unknown>) => {
+          const previous = hold;
+          let release!: () => void;
+          hold = new Promise<void>((resolve) => (release = resolve));
+          await previous;
+          try {
+            return await callback(tx);
+          } finally {
+            release();
+          }
+        },
+      );
+
+      tx.lead.findUnique.mockImplementation(async () => ({
+        id: leadId,
+        status: currentStatus,
+      }));
+      tx.lead.update.mockImplementation(
+        async ({ data }: { data: { status: string } }) => {
+          currentStatus = data.status;
+          return { id: leadId, status: currentStatus };
+        },
+      );
+      tx.leadStatusHistory.create.mockImplementation(async () => {
+        historyRows += 1;
+        return { id: `history-${historyRows}` };
+      });
+
+      const [first, second] = await Promise.all([
+        request(app).patch(statusUrl).send({ toStatus: "UNDER_REVIEW" }),
+        request(app).patch(statusUrl).send({ toStatus: "UNDER_REVIEW" }),
+      ]);
+
+      expect([first.status, second.status].sort((a, b) => a - b)).toEqual([
+        200, 409,
+      ]);
+      const winner = first.status === 200 ? first : second;
+      const loser = first.status === 200 ? second : first;
+      expect(winner.body.historyId).toBe("history-1");
+      expect(loser.body.error.code).toBe("INVALID_TRANSITION");
+      expect(historyRows).toBe(1);
+      expect(currentStatus).toBe("UNDER_REVIEW");
     });
   });
 });

@@ -587,6 +587,137 @@ app.get("/api/v1/leads", async (_req, res, next) => {
   }
 });
 
+// Explicit lead status workflow. Only these transitions are ever allowed;
+// statuses outside this map are rejected and terminal states have no
+// outgoing transitions. Nothing updates or deletes audit rows.
+const LEAD_STATUS_TRANSITIONS: Record<string, readonly string[]> = {
+  SUBMITTED: ["UNDER_REVIEW"],
+  UNDER_REVIEW: ["APPROVED", "REJECTED"],
+  APPROVED: [],
+  REJECTED: [],
+};
+
+const LEAD_STATUSES = Object.keys(LEAD_STATUS_TRANSITIONS);
+
+const leadStatusUpdateSchema = z
+  .object({
+    toStatus: z.string().min(1).max(20),
+  })
+  .strict();
+
+app.patch("/api/v1/leads/:id/status", async (req, res, next) => {
+  const idCheck = z.string().uuid().safeParse(req.params.id);
+  if (!idCheck.success) {
+    return apiError(
+      res,
+      400,
+      "VALIDATION_ERROR",
+      "Please correct the submitted fields",
+      [{ field: "id", message: "Application id must be a UUID" }],
+    );
+  }
+
+  const parsed = validateBody(leadStatusUpdateSchema, req.body);
+  if (!parsed.success) return validationResponse(res, parsed.errors);
+
+  const leadId = idCheck.data;
+  const toStatus = parsed.data.toStatus;
+
+  if (!Object.prototype.hasOwnProperty.call(LEAD_STATUS_TRANSITIONS, toStatus)) {
+    return apiError(
+      res,
+      400,
+      "VALIDATION_ERROR",
+      "Please correct the submitted fields",
+      [
+        {
+          field: "toStatus",
+          message: `Status must be one of ${LEAD_STATUSES.join(", ")}`,
+        },
+      ],
+    );
+  }
+
+  try {
+    const outcome = await prisma.$transaction(async (tx) => {
+      // Serialize transitions for the same lead within PostgreSQL so two
+      // concurrent requests cannot both validate against the same old status.
+      await tx.$queryRaw<{ locked: number }[]>`
+        WITH acquired AS MATERIALIZED (
+          SELECT pg_advisory_xact_lock(hashtext(${`lead-status:${leadId}`}))
+        )
+        SELECT 1 AS locked FROM acquired
+      `;
+
+      const lead = await tx.lead.findUnique({
+        where: { id: leadId },
+        select: { id: true, status: true },
+      });
+
+      if (!lead) return { kind: "not_found" } as const;
+
+      const allowedTargets = LEAD_STATUS_TRANSITIONS[lead.status] ?? [];
+
+      if (!allowedTargets.includes(toStatus)) {
+        return {
+          kind: "invalid_transition",
+          currentStatus: lead.status,
+          allowedTargets,
+        } as const;
+      }
+
+      // The status change and its audit row commit atomically: history can
+      // never show a transition that was not applied, or an applied one not
+      // recorded.
+      await tx.lead.update({
+        where: { id: leadId },
+        data: { status: toStatus },
+      });
+      const history = await tx.leadStatusHistory.create({
+        data: { leadId, fromStatus: lead.status, toStatus },
+      });
+
+      return {
+        kind: "updated",
+        previousStatus: lead.status,
+        historyId: history.id,
+      } as const;
+    });
+
+    if (outcome.kind === "not_found") {
+      return apiError(
+        res,
+        404,
+        "LEAD_NOT_FOUND",
+        "The requested application was not found.",
+      );
+    }
+
+    if (outcome.kind === "invalid_transition") {
+      return apiError(
+        res,
+        409,
+        "INVALID_TRANSITION",
+        `Application status cannot change from ${outcome.currentStatus} to ${toStatus}.`,
+        [],
+        {
+          currentStatus: outcome.currentStatus,
+          allowedTransitions: outcome.allowedTargets,
+        },
+      );
+    }
+
+    return res.json({
+      id: leadId,
+      status: toStatus,
+      previousStatus: outcome.previousStatus,
+      historyId: outcome.historyId,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.use((_req, res) => {
   apiError(res, 404, "NOT_FOUND", "Endpoint not found");
 });

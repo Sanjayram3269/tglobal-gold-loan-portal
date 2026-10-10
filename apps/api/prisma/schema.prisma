@@ -35,8 +35,25 @@ model Lead {
 
   scheme LoanScheme @relation(fields: [schemeId], references: [id])
 
+  statusHistory LeadStatusHistory[]
+
   @@index([mobile, createdAt])
   @@index([createdAt])
+}
+
+// Append-only audit trail: one row per status transition. Rows are only ever
+// inserted (inside the same transaction as the Lead.status update), never
+// updated or deleted, so history cannot be overwritten.
+model LeadStatusHistory {
+  id         String   @id @default(uuid()) @db.Uuid
+  leadId     String   @db.Uuid
+  fromStatus String   @db.VarChar(20)
+  toStatus   String   @db.VarChar(20)
+  createdAt  DateTime @default(now())
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([leadId, createdAt])
 }
 
 model IdempotencyRecord {
