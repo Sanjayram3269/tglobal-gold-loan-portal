@@ -161,6 +161,9 @@ button:disabled { opacity:.6; cursor:not-allowed; }
 .plan-card>p { color:var(--muted); font-size:11px; line-height:1.7; min-height:38px; }
 .plan-meta { display:flex; justify-content:space-between; border-top:1px solid var(--line); padding:13px 0; font-size:10px; }
 .plan-meta span { color:var(--muted); }
+.plan-estimate { align-items:flex-start; gap:12px; }
+.plan-estimate span { max-width:58%; }
+.plan-estimate strong { text-align:right; color:var(--green); }
 .plan-button { width:100%; border:1px solid #dcd8cd; background:transparent; padding:13px; margin-top:13px; color:#46483f; font-size:11px; }
 .plan-button.active { background:var(--green); color:white; border-color:var(--green); }
 .closing-cta { position:relative; overflow:hidden; display:flex; justify-content:space-between; align-items:center; gap:30px; padding:75px 7.2%; background:#223c30; color:#fff; }
