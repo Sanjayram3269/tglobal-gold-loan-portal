@@ -9,7 +9,7 @@ A full-stack gold-loan intake demo built for the TGlobal Full-Stack Developer In
 - **Core implementation:** complete.
 - **Local end-to-end check:** the developer reports that the borrower flow and assistant have been tested end to end locally.
 - **Automated checks:** the verified CI run recorded 25 tests passing across three Vitest files, followed by successful API and frontend builds. Check the [Actions page](https://github.com/Sanjayram3269/tglobal-gold-loan-portal/actions) for the latest run on the current commit.
-- **Remaining before final hand-in:** record the outcomes of the five live-model scenarios in [AI evaluations](docs/AI_EVALUATIONS.md), review the dependency audit, and do a final deployment/configuration check if publishing a live demo.
+- **Remaining before final hand-in:** execute and record the five required live-model scenarios in [AI evaluations](docs/AI_EVALUATIONS.md), review the dependency audit, and confirm the latest CI run is green.
 - **Optional bonuses:** not all bonus items are implemented. See [Bonus scope](#bonus-scope).
 
 ## Product walkthrough
@@ -17,7 +17,7 @@ A full-stack gold-loan intake demo built for the TGlobal Full-Stack Developer In
 ### Borrower portal
 
 1. Enter jewellery net/gross weights, karat, and a loan plan.
-2. View a live, backend-calculated estimate.
+2. View live, backend-calculated estimates for both loan plans and select the plan you prefer.
 3. Enter contact details, review the summary, and explicitly submit.
 4. Receive an application reference or a friendly duplicate-application message.
 
@@ -93,7 +93,7 @@ Reference results:
 | 45g net, 22K, Bullet | ₹288,750 gold value; ₹202,125 eligible loan |
 | 10g net, 18K, Monthly EMI | 7.5g pure gold; ₹52,500 gold value; ₹39,375 eligible loan |
 
-The quote endpoint reports an indicative eligible amount, not a calculated EMI or final repayment schedule.
+The quote endpoint reports an indicative eligible amount, not a calculated EMI or final repayment schedule. The UI requests a quote per available plan and displays the eligible amount on each selectable plan card.
 
 ## API
 
@@ -116,6 +116,7 @@ The AI flow also uses `POST /api/v1/assistant/chat` and `POST /api/v1/assistant/
 - Karat: 18, 22, or 24.
 - Unknown plan: `404`; invalid input: `400`; duplicate mobile within seven days: `409`.
 - Successful lead creation: `201` with an application reference.
+- Error responses use a consistent `error` object with `code`, `message`, and `fields` (an array); top-level `message` is retained for simple clients.
 - Quote endpoint does not create a lead.
 - Server recomputes the quote on submission.
 - Transaction-scoped PostgreSQL advisory locking protects the seven-day duplicate check against concurrent requests.
