@@ -156,7 +156,7 @@ describe("HTTP API", () => {
       .send({ ...validQuote, netWeightGrams: 60 });
 
     expect(response.status).toBe(400);
-    expect(response.body.error).toBe("VALIDATION_ERROR");
+    expect(response.body.error).toMatchObject({ code: "VALIDATION_ERROR", fields: expect.any(Array) });
     expect(response.body.details).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -173,7 +173,7 @@ describe("HTTP API", () => {
       .send({ ...validQuote, schemeId: "PLAN_UNKNOWN" });
 
     expect(response.status).toBe(404);
-    expect(response.body.error).toBe("SCHEME_NOT_FOUND");
+    expect(response.body.error.code).toBe("SCHEME_NOT_FOUND");
   });
 
   it("creates an application using the server-computed amount and masks mobile", async () => {
@@ -239,6 +239,6 @@ describe("HTTP API", () => {
   it("returns a sanitized not-found response for unknown endpoints", async () => {
     const response = await request(app).get("/api/v1/does-not-exist");
     expect(response.status).toBe(404);
-    expect(response.body.error).toBe("NOT_FOUND");
+    expect(response.body.error.code).toBe("NOT_FOUND");
   });
 });
