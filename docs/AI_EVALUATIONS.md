@@ -55,6 +55,10 @@ The assignment requires five conversation evaluations: a happy path through subm
 
 This optional case does not replace any of the five required conversations above.
 
+## Eligibility-criteria grounding regression
+
+Eligibility questions are now intercepted before the language model is called and answered using the currently configured scheme records. The deterministic response explicitly distinguishes form validation from lender eligibility and states that age, income, credit history, and documentation requirements are not configured in this demo. Unit tests cover common eligibility phrasing and verify that configured scheme terms are reported without invented criteria. This regression check does not replace the five required live-model conversation evaluations below.
+
 ## Recording results
 
 Record actual observations after running each case. Do not mark a case as passed until it has been executed.
