@@ -29,15 +29,19 @@ async function main() {
     },
   ];
 
-  for (const scheme of schemes) {
-    await prisma.loanScheme.upsert({
-      where: { id: scheme.id },
-      update: scheme,
-      create: scheme,
-    });
-  }
+for (const scheme of schemes) {
+  await prisma.loanScheme.upsert({
+    where: { id: scheme.id },
+    update: scheme,
+    create: scheme,
+  });
+}
 
-  console.log(`Seeded ${schemes.length} loan schemes.`);
+// This seed is intentionally idempotent and additive: running it again only
+// ensures the two configured loan schemes exist. It does not reset, re-create,
+// or delete existing leads, status history, or idempotency records.
+
+console.log(`Seeded ${schemes.length} loan schemes.`);
 }
 
 main()

@@ -1,0 +1,93 @@
+# Optional local development stack for the TGlobal Gold Loan Portal.
+#
+# Services:
+#   db     - PostgreSQL 17 for the API
+#   api    - Node.js/Express API (apps/api)
+#   web    - Vite frontend dev server (apps/web)
+#
+# This is an optional convenience for fresh local setups and reviewers. It does
+# not replace the existing npm-based workflow with a local PostgreSQL instance.
+#
+# Sensitive values come from the environment file (.env.compose or similar),
+# never from this file.
+
+services:
+  db:
+    image: postgres:17
+    container_name: tglobal-gold-loan-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-tglobal}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME:-tglobal_loan}
+    ports:
+      - "${DB_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-tglobal} -d ${DB_NAME:-tglobal_loan}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    volumes:
+      - tglobal_db_data:/var/lib/postgresql/data
+    networks:
+      - tglobal_network
+    stop_grace_period: 10s
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: development
+    container_name: tglobal-gold-loan-api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: ${PORT:-4000}
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:5173,http://localhost:5174,http://localhost:5175}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://tglobal:tglobal_dev_2026@db:5432/tglobal_loan?schema=public}
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-20b}
+    ports:
+      - "${PORT:-4000}:4000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./apps/api:/app/apps/api
+    working_dir: /app/apps/api
+    command: ["npm", "run", "dev", "--workspace=@tglobal/api"]
+    networks:
+      - tglobal_network
+    stop_grace_period: 10s
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      target: development
+    container_name: tglobal-gold-loan-web
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:4000}
+    ports:
+      - "${WEB_PORT:-5173}:5173"
+    depends_on:
+      - api
+    volumes:
+      - ./apps/web:/app/apps/web
+      - /app/apps/web/node_modules
+    working_dir: /app/apps/web
+    command: ["npm", "run", "dev", "--", "--host"]
+    networks:
+      - tglobal_network
+    stop_grace_period: 10s
+
+volumes:
+  tglobal_db_data:
+    name: tglobal_gold_loan_db_data
+
+networks:
+  tglobal_network:
+    name: tglobal_gold_loan_network
