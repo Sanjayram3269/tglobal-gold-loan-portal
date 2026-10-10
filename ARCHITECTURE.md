@@ -53,8 +53,10 @@ This is a reviewer/demo implementation of a gold-loan intake workflow. It is not
 
 - Confirmation tokens are held in process memory for ten minutes. They are single-use but are not durable, session-bound, or shared across API instances.
 - The applications endpoint and admin UI have no authentication or authorization.
-- No rate limiting, durable audit log, status-transition workflow, or Idempotency-Key replay support is implemented.
-- The gold rate is a fixed mock value. No appraisal-slip image extraction, cached live-rate endpoint, or fourth check_existing_application tool is implemented.
+- POST /api/v1/leads has a configurable in-process rate limit, implemented with zero new dependencies: it returns HTTP 429 with a consistent JSON error body and a Retry-After header for lead-creation requests, and it is scoped to lead creation only. It does not bypass Idempotency-Key replay or the seven-day duplicate-mobile protection.
+- Lead status workflow and durable audit log: PATCH /api/v1/leads/:id/status enforces explicit transitions and writes an append-only LeadStatusHistory row in the same transaction; transitions for the same lead are serialized with a PostgreSQL advisory lock.
+- Idempotency-Key replay support is implemented for POST /api/v1/leads, with an opt-in bounded retention cleanup command.
+- The gold rate is a fixed mock value behind an explicit 5-minute TTL cache (GET /api/v1/gold-rate). No appraisal-slip image extraction, the fourth check_existing_application tool, or a fourth existing-application tool is implemented.
 - Live-model conversation evaluations are manual; CI runs deterministic API tests and builds only.
 - Five high-severity dependency advisories were reported by npm at the latest local install and require separate investigation before production use.
 

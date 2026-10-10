@@ -16,6 +16,10 @@ import {
   type Karat,
   type LoanScheme,
 } from "./domain/loan-calculator.js";
+import {
+  DEFAULT_LEAD_RATE_LIMIT,
+  isRateLimited,
+} from "./lib/rate-limit.js";
 
 const app = express();
 
@@ -742,9 +746,7 @@ app.patch("/api/v1/leads/:id/status", async (req, res, next) => {
 
 app.use((_req, res) => {
   apiError(res, 404, "NOT_FOUND", "Endpoint not found");
-});
-
-app.use((
+});app.use((
   error: Error,
   _req: Request,
   res: Response,
@@ -768,9 +770,204 @@ app.use((
   return apiError(res, 500, "INTERNAL_SERVER_ERROR", "An unexpected error occurred");
 });
 
+// Rate limiting for lead creation
+// ---------------------------------------------------------------------------
+
+app.post("/api/v1/leads", async (req, res, next) => {
+  const rateLimit = isRateLimited(req);
+
+  if (!rateLimit.allowed) {
+    const retrySeconds = Math.max(1, Math.ceil(rateLimit.retryAfterMs / 1000));
+    res.setHeader("Retry-After", String(retrySeconds));
+    return apiError(
+      res,
+      429,
+      "RATE_LIMIT_EXCEEDED",
+      "Too many lead-creation requests. Please wait and try again.",
+      [
+        {
+          field: "rateLimit",
+          message: `Maximum ${DEFAULT_LEAD_RATE_LIMIT.maxRequests} lead requests per ${Math.round(DEFAULT_LEAD_RATE_LIMIT.windowMs / 1000)} seconds.`,
+        },
+      ],
+      { retryAfterSeconds: retrySeconds },
+    );
+  }
+
+  const keyCheck = readIdempotencyKey(req);
+  const parsed = validateBody(applicationSchema, req.body);
+
+  if (!parsed.success) return validationResponse(res, parsed.errors);
+
+  const input: ApplicationInput = parsed.data;
+  const idempotencyKey = keyCheck.kind === "valid" ? keyCheck.key : null;
+  const fingerprint = idempotencyKey ? canonicalFingerprint(input) : null;
+
+  try {
+    // The rate limit was already checked at the top of this handler.
+    // No mobile/payload data is derived or logged here.
+    // Fast path: a committed record means the original request already
+    // finished, so replay its exact status and body without further work.
+    if (idempotencyKey && fingerprint) {
+      const existing = await prisma.idempotencyRecord.findUnique({
+        where: { key: idempotencyKey },
+      });
+
+      if (existing) {
+        return sendIdempotencyOutcome(res, idempotencyOutcome(existing, fingerprint));
+      }
+    }
+
+    const outcome = await prisma.$transaction(async (tx) => {
+      // Serialize submissions for the same mobile number within PostgreSQL.
+      await tx.$queryRaw<{ locked: number }[]>`
+        WITH acquired AS MATERIALIZED (
+          SELECT pg_advisory_xact_lock(hashtext(${input.mobile}))
+        )
+        SELECT 1 AS locked FROM acquired
+      `;
+
+      // A committed record for this key that becomes visible here means a
+      // concurrent request with the same mobile number finished first.
+      if (idempotencyKey && fingerprint) {
+        const existing = await tx.idempotencyRecord.findUnique({
+          where: { key: idempotencyKey },
+        });
+
+        if (existing) return idempotencyOutcome(existing, fingerprint);
+      }
+
+      const scheme = await tx.loanScheme.findUnique({
+        where: { id: input.schemeId },
+      });
+
+      if (!scheme) {
+        const body = errorBody("SCHEME_NOT_FOUND", "The selected loan scheme was not found.");
+
+        if (idempotencyKey && fingerprint) {
+          await tx.idempotencyRecord.create({
+            data: {
+              key: idempotencyKey,
+              fingerprint,
+              responseStatus: 404,
+              responseBody: JSON.stringify(body),
+            },
+          });
+        }
+
+        return { kind: "respond", status: 404, body } as const;
+      }
+
+      const quote = calculateQuote(
+        {
+          netWeightGrams: input.netWeightGrams,
+          grossWeightGrams: input.grossWeightGrams,
+          karat: input.karat,
+          schemeId: input.schemeId,
+        },
+        toCalculatorScheme(scheme),
+      );
+
+      const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+      const duplicate = await tx.lead.findFirst({
+        where: {
+          mobile: input.mobile,
+          createdAt: { gte: cutoff },
+        },
+        orderBy: { createdAt: "desc" },
+        select: { id: true },
+      });
+
+      if (duplicate) {
+        const body = errorBody(
+          "DUPLICATE_APPLICATION",
+          "An application was already submitted with this mobile number in the last 7 days.",
+          [],
+          { existingApplicationId: duplicate.id },
+        );
+
+        if (idempotencyKey && fingerprint) {
+          await tx.idempotencyRecord.create({
+            data: {
+              key: idempotencyKey,
+              fingerprint,
+              responseStatus: 409,
+              responseBody: JSON.stringify(body),
+            },
+          });
+        }
+
+        return { kind: "respond", status: 409, body } as const;
+      }
+
+      const lead = await tx.lead.create({
+        data: {
+          name: input.name,
+          mobile: input.mobile,
+          netWeightGrams: input.netWeightGrams,
+          grossWeightGrams: input.grossWeightGrams,
+          karat: input.karat,
+          schemeId: input.schemeId,
+          eligibleLoanRupees: BigInt(quote.eligibleLoanRupees),
+          status: "SUBMITTED",
+        },
+      });
+
+      const body = {
+        message: "Application submitted successfully",
+        applicationId: lead.id,
+        application: {
+          id: lead.id,
+          name: lead.name,
+          mobile: maskMobile(lead.mobile),
+          schemeId: lead.schemeId,
+          eligibleLoanRupees: Number(lead.eligibleLoanRupees),
+          status: lead.status,
+          createdAt: lead.createdAt,
+        },
+      };
+
+      // The lead and its idempotency result commit atomically: a failure can
+      // never persist one without the other.
+      if (idempotencyKey && fingerprint) {
+        await tx.idempotencyRecord.create({
+          data: {
+            key: idempotencyKey,
+            fingerprint,
+            responseStatus: 201,
+            responseBody: JSON.stringify(body),
+          },
+        });
+      }
+
+      return { kind: "respond", status: 201, body } as const;
+    });
+
+    if (outcome.kind !== "respond") {
+      return sendIdempotencyOutcome(res, outcome);
+    }
+
+    return res.status(outcome.status).json(outcome.body);
+  } catch (error) {
+    // A concurrent request with the same key committed first, so PostgreSQL
+    // rejected our insert: replay the stored result or report key reuse.
+    if (idempotencyKey && fingerprint && isUniqueConstraintViolation(error)) {
+      try {
+        const existing = await prisma.idempotencyRecord.findUnique({
+          where: { key: idempotencyKey },
+        });
+
+        if (existing) {
+          return sendIdempotencyOutcome(res, idempotencyOutcome(existing, fingerprint));
+        }
+      } catch (replayError) {
+        return next(replayError);
+      }
+    }
+
+    return next(error);
+  }
+});
+
 export default app;
-
-
-
-
-
