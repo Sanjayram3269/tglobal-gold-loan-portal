@@ -8,7 +8,7 @@ A full-stack gold-loan intake demo built for the TGlobal Full-Stack Developer In
 
 - **Core application:** implemented and manually exercised end to end, including Idempotency-Key replay with opt-in retention cleanup, a lead status workflow with a durable audit log, and a cached mock gold-rate endpoint.
 - **Automated verification:** latest local run passed **72/72 tests across six Vitest files**; lint and API TypeScript/frontend TypeScript-Vite production builds passed; npm audit reports 0 vulnerabilities.
-- **GitHub CI:** [Run #46 passed](https://github.com/Sanjayram3269/tglobal-gold-loan-portal/actions/runs/38054676340) for commit b7cc61e24c662eee5bb54e7280eca0eaac404ba9.
+- **GitHub CI:** [Run #47 passed](https://github.com/Sanjayram3269/tglobal-gold-loan-portal/actions/runs/38055055390) for commit e78cf382198dfafe63f7260700db102cf258a108.
 - **AI conversation checks:** five required scenarios and four additional manual scenarios are recorded in [docs/AI_EVALUATIONS.md](docs/AI_EVALUATIONS.md). These are manual observations, not automated live-model CI tests.
 - **Submission files:** this README, [AI_LOG.md](AI_LOG.md), [.env.example](.env.example), migrations/seed, tests, and GitHub Actions workflow are included.
 - **Bonus scope and limitations:** see [Bonus scope](#bonus-scope) and [Known limitations](#known-limitations).
