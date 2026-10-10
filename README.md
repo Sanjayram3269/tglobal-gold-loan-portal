@@ -1,33 +1,35 @@
 # TGlobal Gold Loan Portal
 
-A full-stack gold-loan intake demo built for the TGlobal Full-Stack Developer Intern take-home assignment. It combines a responsive React portal, a validated Node.js API, PostgreSQL persistence, exact quote calculations, and a Groq-powered assistant that uses backend tools and requires explicit confirmation before an application is submitted.
+A full-stack gold-loan intake demo built for the TGlobal Full-Stack Developer Intern take-home assignment. It combines a responsive React portal, a validated Node.js API, PostgreSQL persistence, exact quote calculations, and a Groq-powered assistant that calls backend tools and requires explicit confirmation before an application is submitted.
 
 > **Demo only:** the reference gold rate is fixed at ₹7,000 per gram for 24K gold. Quotes are indicative, not a lending decision or approval. Do not use this demo with real applicant data.
 
-## Status
+## Submission status
 
-- **Core implementation:** complete.
-- **Local end-to-end check:** the developer reports that the borrower flow and assistant have been tested end to end locally.
-- **Automated checks:** the verified CI run recorded 25 tests passing across three Vitest files, followed by successful API and frontend builds. Check the [Actions page](https://github.com/Sanjayram3269/tglobal-gold-loan-portal/actions) for the latest run on the current commit.
-- **Remaining before final hand-in:** execute and record the five required live-model scenarios in [AI evaluations](docs/AI_EVALUATIONS.md), review the dependency audit, and confirm the latest CI run is green.
-- **Optional bonuses:** not all bonus items are implemented. See [Bonus scope](#bonus-scope).
+- **Core application:** implemented and manually exercised end to end.
+- **Automated verification:** latest local run passed **36/36 tests across four Vitest files**; API TypeScript build and frontend TypeScript/Vite production build both passed after a fresh npm ci.
+- **GitHub CI:** [Run #34 passed](https://github.com/Sanjayram3269/tglobal-gold-loan-portal/actions/runs/38037015978) for commit a31e7f27d49a14c018e26ab1aa0660edfc334962.
+- **AI conversation checks:** five required scenarios and four additional manual scenarios are recorded in [docs/AI_EVALUATIONS.md](docs/AI_EVALUATIONS.md). These are manual observations, not automated live-model CI tests.
+- **Submission files:** this README, [AI_LOG.md](AI_LOG.md), [.env.example](.env.example), migrations/seed, tests, and GitHub Actions workflow are included.
+- **Bonus scope and limitations:** see [Bonus scope](#bonus-scope) and [Known limitations](#known-limitations).
 
 ## Product walkthrough
 
 ### Borrower portal
 
 1. Enter jewellery net/gross weights, karat, and a loan plan.
-2. View live, backend-calculated estimates for both loan plans and select the plan you prefer.
-3. Enter contact details, review the summary, and explicitly submit.
+2. View backend-calculated indicative estimates for each available plan and choose a plan.
+3. Enter contact details, review the summary, and submit.
 4. Receive an application reference or a friendly duplicate-application message.
 
 ### AI loan assistant
 
 - Retrieves available plans from PostgreSQL.
-- Calls the backend quote calculation rather than doing arithmetic in the model.
+- Calls the backend quote calculator rather than doing arithmetic in the model.
 - Collects missing application details and prepares a review card.
-- Does **not** create a lead during preparation. A separate confirmation action is required before the backend creates the application.
-- Avoids promising approval or inventing repayment schedules that the quote API does not calculate.
+- Does **not** create a lead during preparation. A separate explicit confirmation action is required before the backend creates the application.
+- Refuses unrelated requests, avoids unsupported lender-eligibility claims, and does not promise approval.
+- Uses a ten-minute, single-use in-memory confirmation token.
 
 ### Demo applications view
 
@@ -43,32 +45,15 @@ Lists applications newest first, masks mobile numbers, and supports filtering by
 | Database | PostgreSQL 17 |
 | ORM / migrations | Prisma 7 |
 | Money calculations | Decimal.js; eligible loan is floored to whole rupees |
-| AI | Groq API through the OpenAI-compatible SDK; default model `openai/gpt-oss-20b` |
+| AI | Groq API through the OpenAI-compatible SDK; default model openai/gpt-oss-20b |
 | Tests | Vitest, Supertest |
-| CI | GitHub Actions: API tests and frontend/API production builds |
+| CI | GitHub Actions: API tests and API/frontend production builds |
 
 ## Architecture
 
-```text
-React borrower form ───────┐
-React AI chat ─────────────┼──> Express API ──> Zod validation
-Demo applications view ───┘        │
-                                   ├──> Loan calculator / application service
-                                   │              │
-                                   │              v
-                                   └──────────> PostgreSQL
-AI orchestrator ──> get_loan_schemes
-                ├─> calculate_quote
-                └─> submit_application (prepare only)
-                          │
-                          v
-                explicit UI confirmation
-                          │
-                          v
-                 server-side lead creation
-```
+See [ARCHITECTURE.md](ARCHITECTURE.md) for component boundaries, request flows, data integrity, errors, and deliberate limitations.
 
-The API and database are the source of truth. The client never supplies a trusted eligible-loan amount. Both the guided form and AI flow use server-side validation, calculation, and duplicate protection.
+The guided form and AI flow both use the same backend validation, quote calculation, and duplicate protection. The model never acts as the source of truth for financial calculations.
 
 ## Financial rules
 
@@ -76,14 +61,13 @@ Mock 24K rate: **₹7,000/g**.
 
 | Plan ID | Plan | Interest p.a. | Max LTV | Tenure |
 |---|---|---:|---:|---|
-| `PLAN_BULLET_01` | Bullet Repayment | 12.0% | 70% | 12 months |
-| `PLAN_EMI_01` | Monthly EMI | 10.5% | 75% | 12 months |
+| PLAN_BULLET_01 | Bullet Repayment | 12.0% | 70% | 12 months |
+| PLAN_EMI_01 | Monthly EMI | 10.5% | 75% | 12 months |
 
-```text
-pureGoldGrams = netWeightGrams × (karat / 24)
-goldValue     = pureGoldGrams × rate24kPerGram
-eligibleLoan  = floor(goldValue × min(plan.maxLtv, 0.75))
-```
+Calculation:
+- pureGoldGrams = netWeightGrams × (karat / 24)
+- goldValue = pureGoldGrams × rate24kPerGram
+- eligibleLoan = floor(goldValue × min(plan.maxLtv, 0.75))
 
 Reference results:
 
@@ -93,32 +77,31 @@ Reference results:
 | 45g net, 22K, Bullet | ₹288,750 gold value; ₹202,125 eligible loan |
 | 10g net, 18K, Monthly EMI | 7.5g pure gold; ₹52,500 gold value; ₹39,375 eligible loan |
 
-The quote endpoint reports an indicative eligible amount, not a calculated EMI or final repayment schedule. The UI requests a quote per available plan and displays the eligible amount on each selectable plan card.
+The quote endpoint reports an indicative eligible amount, not a calculated EMI or final repayment schedule.
 
 ## API
 
-Base path: `/api/v1`
+Base path: /api/v1
 
 | Method | Endpoint | Purpose |
 |---|---|---|
-| `GET` | `/loan-schemes` | Return available seeded schemes |
-| `POST` | `/quotes` | Validate input and calculate per-plan estimates without writing a lead |
-| `POST` | `/leads` | Revalidate, recalculate, check duplicates, and create a `SUBMITTED` lead |
-| `GET` | `/leads` | List newest applications first with mobile numbers masked |
-
-The AI flow also uses `POST /api/v1/assistant/chat` and `POST /api/v1/assistant/confirm`.
+| GET | /loan-schemes | Return available seeded schemes |
+| POST | /quotes | Validate input and calculate an estimate without writing a lead |
+| POST | /leads | Revalidate, recalculate, check duplicates, and create a SUBMITTED lead |
+| GET | /leads | List newest applications first with mobile numbers masked |
+| POST | /assistant/chat | Run the tool-using assistant |
+| POST | /assistant/confirm | Submit a prepared application after explicit confirmation |
 
 ### Validation and integrity
 
-- Applicant name: 2–60 letters/spaces.
-- Indian mobile: `^[6-9]\\d{9}$`.
-- Weights: `0 < net ≤ gross ≤ 1000g`.
+- Applicant name: 2–60 ASCII letters/spaces.
+- Indian mobile: ^[6-9]\d{9}$.
+- Weights: 0 < net ≤ gross ≤ 1000g.
 - Karat: 18, 22, or 24.
-- Unknown plan: `404`; invalid input: `400`; duplicate mobile within seven days: `409`.
-- Successful lead creation: `201` with an application reference.
-- Error responses use a consistent `error` object with `code`, `message`, and `fields` (an array); top-level `message` is retained for simple clients.
-- Quote endpoint does not create a lead.
-- Server recomputes the quote on submission.
+- Unknown plan: 404; invalid input: 400; duplicate mobile within seven days: 409.
+- Successful lead creation: 201 with an application reference.
+- Errors return a consistent error object with code, message, and fields, plus a top-level message for simple clients.
+- Quote endpoint does not create a lead; the server recomputes the quote during submission.
 - Transaction-scoped PostgreSQL advisory locking protects the seven-day duplicate check against concurrent requests.
 - Mobile numbers are masked in lead-list responses.
 
@@ -128,126 +111,116 @@ The AI flow also uses `POST /api/v1/assistant/chat` and `POST /api/v1/assistant/
 
 - Node.js 22 and npm.
 - PostgreSQL 17, locally or through Docker.
-- A Groq API key for live assistant conversations. Automated tests and production builds should not require a live model key.
+- A Groq API key for live assistant conversations. Automated tests and production builds do not require a live model key.
 
 ### Install and configure
 
 From PowerShell:
 
-```powershell
-git clone https://github.com/Sanjayram3269/tglobal-gold-loan-portal.git
-cd tglobal-gold-loan-portal
-npm ci
-Copy-Item .env.example apps/api/.env
-```
+    git clone https://github.com/Sanjayram3269/tglobal-gold-loan-portal.git
+    cd tglobal-gold-loan-portal
+    npm ci
+    Copy-Item .env.example apps/api/.env
 
-Edit `apps/api/.env` and set your PostgreSQL `DATABASE_URL` and server-side `GROQ_API_KEY`. Keep this file local; never commit it.
+Edit apps/api/.env and set your PostgreSQL DATABASE_URL and server-side GROQ_API_KEY. Keep this file local; never commit it.
 
 Apply migrations and seed the plans:
 
-```powershell
-npm exec --workspace=@tglobal/api -- prisma migrate deploy
-npm run seed --workspace=@tglobal/api
-```
+    npm exec --workspace=@tglobal/api -- prisma migrate deploy
+    npm run seed --workspace=@tglobal/api
 
 Start the API and frontend:
 
-```powershell
-npm run dev
-```
+    npm run dev
 
-Open the Vite URL printed in the terminal. The API defaults to port `4000`; Vite usually uses `5173`, but may choose another available port.
+Open the Vite URL printed in the terminal. The API defaults to port 4000; Vite usually uses 5173, but may choose another available port.
 
 ## Environment variables
 
 | Variable | Used by | Purpose |
 |---|---|---|
-| `DATABASE_URL` | API | PostgreSQL connection string |
-| `PORT` | API | API listen port; defaults to `4000` |
-| `WEB_ORIGIN` | API | Comma-separated allowed browser origins |
-| `GROQ_API_KEY` | API only | Secret key for live AI calls |
-| `GROQ_MODEL` | API | Groq model ID; defaults to `openai/gpt-oss-20b` |
-| `VITE_API_URL` | Frontend build | Public base URL for the API; defaults to `http://localhost:4000` |
+| DATABASE_URL | API | PostgreSQL connection string |
+| PORT | API | API listen port; defaults to 4000 |
+| WEB_ORIGIN | API | Comma-separated allowed browser origins |
+| GROQ_API_KEY | API only | Secret key for live AI calls |
+| GROQ_MODEL | API | Groq model ID; defaults to openai/gpt-oss-20b |
+| VITE_API_URL | Frontend build | Public API base URL; defaults to http://localhost:4000 |
 
-Never place secrets in variables prefixed with `VITE_`: Vite embeds those values in client-side assets. If a key has been committed or exposed, revoke and rotate it.
+Never place secrets in variables prefixed with VITE_: Vite embeds those values in client-side assets. If a key has been committed or exposed, revoke and rotate it.
 
 ## Test and build
 
-```powershell
-npm test
-npm run build
-npm run lint
-```
+    npm ci
+    npm test
+    npm run build
+    npm run lint
 
-The root `npm test` runs the API Vitest suite. `npm run build` builds the API and frontend. `npm run lint` runs the frontend ESLint checks. CI currently runs API tests and production builds; it does not run live-model evaluations or provision a fresh PostgreSQL service.
+**Latest local verification:** npm test passed 36 tests across four files; npm run build passed for API and frontend. npm run lint is available but was not included in the latest reported verification. CI runs API tests and production builds; it does not run live-model evaluations or provision a fresh PostgreSQL service.
 
 See:
-- [AI evaluation scenarios](docs/AI_EVALUATIONS.md)
+- [AI evaluation results](docs/AI_EVALUATIONS.md)
 - [AI-assisted development log](AI_LOG.md)
+- [Architecture notes](ARCHITECTURE.md)
 - [GitHub Actions](https://github.com/Sanjayram3269/tglobal-gold-loan-portal/actions)
-
-## Deployment notes
-
-The frontend can be deployed to Vercel, but **Vercel hosting the frontend alone does not deploy this Express API or PostgreSQL database**. For a working public demo:
-
-1. Deploy the API to a Node-compatible host and provision a hosted PostgreSQL database.
-2. Configure the API's server-side `DATABASE_URL`, `GROQ_API_KEY`, `GROQ_MODEL`, `PORT`, and `WEB_ORIGIN` environment variables.
-3. Run Prisma migrations and seed the schemes against the hosted database.
-4. In Vercel, set `VITE_API_URL` to the deployed API's public base URL and redeploy the frontend so the URL is embedded in the build.
-5. Set `WEB_ORIGIN` to the exact deployed frontend origin (including the production Vercel domain). Confirm CORS, health checks, scheme loading, quotes, assistant chat, confirmation, and application listing against the deployed services.
-
-Do not publish a working demo with real borrower information: the applications view has no authentication, there is no rate limiting, and assistant confirmation tokens are held in process memory for ten minutes. The in-memory token approach is not durable across restarts or multiple API instances.
 
 ## Bonus scope
 
-The assignment lists optional hardening, agent, AI-extra, and operations bonuses. The current implementation includes concurrency-safe duplicate checks and a GitHub Actions workflow. The following items are **not claimed as complete** unless implemented and tested in a later commit:
+The assignment makes bonuses optional and says they do not replace required work. Implemented and manually checked in this project:
 
-- Idempotency-Key replay and conflict handling.
-- Lead status workflow with an audit log.
+- **Concurrency-safe duplicate protection:** PostgreSQL transaction-scoped advisory locks protect concurrent requests for the same mobile.
+- **Single-use confirmation:** confirmation tokens expire after ten minutes and are consumed before the database write; unit tests cover replay attempts.
+- **Prompt-injection handling and multilingual conversation:** manual checks for prompt injection and Hinglish are recorded in the evaluation report.
+- **Change-mind flow:** cancelling at the review step leaves the lead count unchanged, per manual test.
+- **CI and architecture documentation:** GitHub Actions runs automated tests/builds; architecture and request flow are documented.
+
+Not implemented or not claimed as complete:
+
+- Idempotency-Key replay semantics for POST /leads.
+- A lead status-transition workflow with a durable audit log.
 - Cached gold-rate endpoint.
-- Fourth `check_existing_application` tool.
-- Automated live-model evaluation runner / ten-plus evaluations.
+- Fourth check_existing_application tool.
+- Streaming assistant responses and visible tool-status chips.
+- Ten-plus automated live-model evaluations or an npm run eval runner.
 - Appraisal-slip image extraction or natural-language admin filtering.
 - API rate limiting.
-- Full Docker Compose deployment and a two-minute demo video.
-- Admin authentication and role-based authorization.
+- Admin authentication/role-based access control.
+- A full-stack Docker Compose deployment and two-minute demo video.
 
-## Known limitations
+## Known limitations and security notes
 
-- Fixed mock gold rate; no live market feed or valuation of jewellery authenticity.
+- Fixed mock gold rate; no live market feed or jewellery-authenticity valuation.
 - No real loan approval, identity verification, collateral verification, credit assessment, or repayment-schedule calculation.
-- Admin list endpoint is unauthenticated and must not be used with real personal data.
-- AI confirmation tokens are in-memory and expire after ten minutes.
-- Live-model scenarios need to be run and their observed outcomes recorded.
-- The last recorded dependency installation reported five high-severity npm audit findings. Review current advisories and apply compatible fixes before any production use.
+- Admin list endpoint is unauthenticated; do not use with real applicant information.
+- Confirmation tokens are stored in process memory, expire after ten minutes, and are lost on restart. This is not durable across multiple API instances.
+- Live-model evaluations are manual observations and are not part of CI.
+- The latest npm ci reported **five high-severity npm audit findings**. The build and tests pass, but the dependency advisories have not been fully investigated. Avoid npm audit fix --force; review the audit details and make compatible updates separately before production use.
 
 ## Repository structure
 
-```text
-.
-├── .github/workflows/ci.yml
-├── apps/
-│   ├── api/
-│   │   ├── prisma/              # Schema, migrations, seed
-│   │   ├── src/domain/          # Financial calculator
-│   │   ├── src/services/        # AI tools and confirmation flow
-│   │   └── tests/               # Calculator, assistant and HTTP tests
-│   └── web/src/                 # React portal and assistant widget
-├── docs/AI_EVALUATIONS.md
-├── AI_LOG.md
-├── .env.example
-├── package.json
-└── README.md
-```
+    .
+    ├── .github/workflows/ci.yml
+    ├── apps/
+    │   ├── api/
+    │   │   ├── prisma/              # Schema, migration and seed
+    │   │   ├── src/domain/          # Financial calculator
+    │   │   ├── src/services/        # Assistant and confirmation flow
+    │   │   └── tests/               # Four Vitest files in total
+    │   └── web/src/                 # React portal and assistant widget
+    ├── ARCHITECTURE.md
+    ├── docs/AI_EVALUATIONS.md
+    ├── AI_LOG.md
+    ├── .env.example
+    ├── package.json
+    └── README.md
 
 ## Final hand-in checklist
 
-- [x] Core API, calculation, persistence, borrower flow, assistant, and demo applications view implemented.
-- [x] Calculator, assistant-confirmation, and HTTP tests included.
-- [x] Environment template and AI log committed.
-- [x] CI workflow configured.
-- [x] Developer reports local end-to-end testing completed.
-- [ ] Record actual results for all five required AI conversation evaluations.
-- [ ] Check the latest CI run on the final commit.
-- [ ] Review current npm audit findings.
-- [ ] If deploying, test the deployed frontend and backend together with production environment variables.
+- [x] Core API, calculation, persistence, borrower form, assistant, and applications view.
+- [x] Server-side validation, scheme lookup, duplicate rejection, masked mobile numbers, and explicit AI confirmation.
+- [x] Unit/HTTP tests; latest local result: 36/36 passing.
+- [x] API and frontend production builds pass locally.
+- [x] .env.example, AI_LOG.md, AI evaluation report, Prisma migration/seed, and CI workflow committed.
+- [x] Required and bonus manual conversation scenarios recorded in AI_EVALUATIONS.md.
+- [x] Latest verified GitHub Actions run passed on commit a31e7f2.
+- [ ] Review/fix the five high-severity dependency audit findings before any production deployment.
+- [ ] Add authentication, rate limiting, durable confirmation state, and monitoring before production use.
