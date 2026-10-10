@@ -126,12 +126,30 @@ function validateBody<T>(schema: z.ZodType<T>, body: unknown) {
   };
 }
 
-function validationResponse(res: Response, errors: unknown[]) {
-  return res.status(400).json({
-    error: "VALIDATION_ERROR",
-    message: "Please correct the submitted fields",
-    details: errors,
+function apiError(
+  res: Response,
+  status: number,
+  code: string,
+  message: string,
+  fields: Array<{ field: string; message: string }> = [],
+  extra: Record<string, unknown> = {},
+) {
+  return res.status(status).json({
+    error: { code, message, fields },
+    message,
+    details: fields,
+    ...extra,
   });
+}
+
+function validationResponse(res: Response, errors: unknown[]) {
+  return apiError(
+    res,
+    400,
+    "VALIDATION_ERROR",
+    "Please correct the submitted fields",
+    errors as Array<{ field: string; message: string }>,
+  );
 }
 
 
@@ -151,10 +169,7 @@ const assistantConfirmSchema = z.object({
 app.post("/api/v1/assistant/chat", async (req, res, next) => {
   const parsed = assistantChatSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({
-      error: "VALIDATION_ERROR",
-      message: "Provide a message and valid conversation history.",
-    });
+    return apiError(res, 400, "VALIDATION_ERROR", "Provide a message and valid conversation history.");
   }
 
   try {
@@ -171,10 +186,7 @@ app.post("/api/v1/assistant/chat", async (req, res, next) => {
 app.post("/api/v1/assistant/confirm", async (req, res, next) => {
   const parsed = assistantConfirmSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({
-      error: "CONFIRMATION_REQUIRED",
-      message: "A valid confirmation token and explicit confirmation are required.",
-    });
+    return apiError(res, 400, "CONFIRMATION_REQUIRED", "A valid confirmation token and explicit confirmation are required.");
   }
 
   try {
@@ -184,26 +196,19 @@ app.post("/api/v1/assistant/confirm", async (req, res, next) => {
     );
 
     if (result.kind === "NOT_CONFIRMED") {
-      return res.status(400).json({ error: "NOT_CONFIRMED" });
+      return apiError(res, 400, "NOT_CONFIRMED", "Explicit confirmation is required.");
     }
 
     if (result.kind === "EXPIRED_OR_INVALID") {
-      return res.status(410).json({
-        error: "CONFIRMATION_EXPIRED",
-        message: "Please prepare the application again.",
-      });
+      return apiError(res, 410, "CONFIRMATION_EXPIRED", "Please prepare the application again.");
     }
 
     if (result.kind === "SCHEME_NOT_FOUND") {
-      return res.status(404).json({ error: "SCHEME_NOT_FOUND" });
+      return apiError(res, 404, "SCHEME_NOT_FOUND", "The selected loan scheme was not found.");
     }
 
     if (result.kind === "DUPLICATE") {
-      return res.status(409).json({
-        error: "DUPLICATE_APPLICATION",
-        message: "An application already exists for this mobile number within the last 7 days.",
-        existingApplicationId: result.existingApplicationId,
-      });
+      return apiError(res, 409, "DUPLICATE_APPLICATION", "An application already exists for this mobile number within the last 7 days.", [], { existingApplicationId: result.existingApplicationId });
     }
 
     return res.status(201).json({
@@ -256,10 +261,7 @@ app.post("/api/v1/quotes", async (req, res, next) => {
     });
 
     if (!scheme) {
-      return res.status(404).json({
-        error: "SCHEME_NOT_FOUND",
-        message: "The selected loan scheme was not found",
-      });
+      return apiError(res, 404, "SCHEME_NOT_FOUND", "The selected loan scheme was not found.");
     }
 
     const quote = calculateQuote(
@@ -348,11 +350,7 @@ app.post("/api/v1/leads", async (req, res, next) => {
     });
 
     if ("duplicateId" in created) {
-      return res.status(409).json({
-        error: "DUPLICATE_APPLICATION",
-        message: "An application was already submitted with this mobile number in the last 7 days",
-        existingApplicationId: created.duplicateId,
-      });
+      return apiError(res, 409, "DUPLICATE_APPLICATION", "An application was already submitted with this mobile number in the last 7 days.", [], { existingApplicationId: created.duplicateId });
     }
 
     return res.status(201).json({
@@ -406,10 +404,7 @@ app.get("/api/v1/leads", async (_req, res, next) => {
 });
 
 app.use((_req, res) => {
-  res.status(404).json({
-    error: "NOT_FOUND",
-    message: "Endpoint not found",
-  });
+  apiError(res, 404, "NOT_FOUND", "Endpoint not found");
 });
 
 app.use((
@@ -419,25 +414,21 @@ app.use((
   _next: NextFunction,
 ) => {
   if (error instanceof QuoteValidationError) {
-    return res.status(error.statusCode).json({
-      error: error.statusCode === 404 ? "SCHEME_NOT_FOUND" : "VALIDATION_ERROR",
-      message: error.message,
-      field: error.field,
-    });
+    return apiError(
+      res,
+      error.statusCode,
+      error.statusCode === 404 ? "SCHEME_NOT_FOUND" : "VALIDATION_ERROR",
+      error.message,
+      error.field ? [{ field: error.field, message: error.message }] : [],
+    );
   }
 
   if (error instanceof SyntaxError && "body" in error) {
-    return res.status(400).json({
-      error: "INVALID_JSON",
-      message: "Request body contains invalid JSON",
-    });
+    return apiError(res, 400, "INVALID_JSON", "Request body contains invalid JSON");
   }
 
   console.error(error);
-  return res.status(500).json({
-    error: "INTERNAL_SERVER_ERROR",
-    message: "An unexpected error occurred",
-  });
+  return apiError(res, 500, "INTERNAL_SERVER_ERROR", "An unexpected error occurred");
 });
 
 export default app;
