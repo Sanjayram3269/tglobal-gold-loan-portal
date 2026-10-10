@@ -227,6 +227,41 @@ describe("assistant confirmation service", () => {
     expect(tx.lead.create).not.toHaveBeenCalled();
   });
 
+  it("rejects an expired confirmation token", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-10T12:00:00.000Z"));
+
+    try {
+      const prepared = prepareApplication(validDraft);
+      vi.advanceTimersByTime(600_001);
+
+      const result = await confirmApplication(
+        prepared.confirmationToken,
+        true,
+      );
+
+      expect(result).toEqual({ kind: "EXPIRED_OR_INVALID" });
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+      expect(tx.lead.create).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("allows only one concurrent confirmation for the same token", async () => {
+    const prepared = prepareApplication(validDraft);
+
+    const results = await Promise.all([
+      confirmApplication(prepared.confirmationToken, true),
+      confirmApplication(prepared.confirmationToken, true),
+    ]);
+
+    expect(results.filter((result) => result.kind === "CREATED")).toHaveLength(1);
+    expect(results.filter((result) => result.kind === "EXPIRED_OR_INVALID")).toHaveLength(1);
+    expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(tx.lead.create).toHaveBeenCalledTimes(1);
+  });
+
   it("rejects invalid application weights", () => {
     expect(() =>
       prepareApplication({
