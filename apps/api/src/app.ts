@@ -7,6 +7,10 @@ import { z } from "zod";
 import { createHash } from "node:crypto";
 import { prisma } from "./lib/prisma.js";
 import {
+  GOLD_RATE_TTL_MS,
+  readGoldRate,
+} from "./services/gold-rate.js";
+import {
   calculateQuote,
   QuoteValidationError,
   type Karat,
@@ -338,6 +342,24 @@ app.get("/api/v1/loan-schemes", async (_req, res, next) => {
         tenureMonths: scheme.tenureMonths,
         repaymentType: scheme.repaymentType,
       })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Cached mock gold rate. The value comes from the shared calculator's
+// MOCK_GOLD_RATE_PER_GRAM; it is explicitly not a live market feed.
+app.get("/api/v1/gold-rate", (_req, res, next) => {
+  try {
+    const read = readGoldRate();
+    return res.json({
+      goldRate: read.rate,
+      cache: {
+        hit: read.cacheHit,
+        ttlSeconds: GOLD_RATE_TTL_MS / 1000,
+        expiresAt: read.expiresAt,
+      },
     });
   } catch (error) {
     next(error);

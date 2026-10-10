@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import { purgeExpiredIdempotencyRecords } from "../src/services/idempotency-retention.js";
+import { resetGoldRateCache } from "../src/services/gold-rate.js";
 
 const { prismaMock, assistantMock, confirmationMock } = vi.hoisted(() => ({
   prismaMock: {
@@ -193,6 +194,25 @@ describe("HTTP API", () => {
       name: "Bullet Repayment",
       interestRatePercent: "12.00",
     });
+  });
+
+  it("serves the mock gold rate with explicit cache metadata", async () => {
+    resetGoldRateCache();
+
+    const first = await request(app).get("/api/v1/gold-rate");
+    expect(first.status).toBe(200);
+    expect(first.body.goldRate).toMatchObject({
+      ratePerGramRupees: 7000,
+      currency: "INR",
+      source: "mock-reference",
+    });
+    expect(first.body.goldRate.asOf).toEqual(expect.any(String));
+    expect(first.body.cache).toMatchObject({ hit: false, ttlSeconds: 300 });
+
+    const second = await request(app).get("/api/v1/gold-rate");
+    expect(second.status).toBe(200);
+    expect(second.body.cache.hit).toBe(true);
+    expect(second.body.goldRate.asOf).toBe(first.body.goldRate.asOf);
   });
 
   it("returns the expected quote without creating a lead", async () => {
