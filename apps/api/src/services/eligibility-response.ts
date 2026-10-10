@@ -8,7 +8,7 @@ export type EligibilityScheme = {
 };
 
 export function isEligibilityCriteriaQuestion(message: string): boolean {
-  return /\b(eligib(?:le|ility)|qualif(?:y|ies|ication|ications)|criteria|requirements?|who can apply|minimum age|minimum income|income requirement|credit history|credit score|documents required|documentation required)\b/i.test(
+  return /\b(eligib(?:le|ility)|qualif(?:y|ies|ication|ications)|criteria|requirements?|who can apply|minimum age|minimum income|income requirement|credit history|credit score|documents?.{0,30}required|documentation.{0,30}required)\b/i.test(
     message,
   );
 }
