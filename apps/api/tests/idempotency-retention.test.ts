@@ -4,6 +4,11 @@ import {
   type RetentionClient,
 } from "../src/services/idempotency-retention.js";
 
+// The retention service imports the shared Prisma client, which requires
+// DATABASE_URL at import time. CI has no database, and every test injects its
+// own client, so the real module is replaced the same way the other suites do.
+vi.mock("../src/lib/prisma.js", () => ({ prisma: {} }));
+
 type StoredRecord = { key: string; createdAt: Date };
 
 const T0 = new Date("2026-10-10T12:00:00.000Z");
