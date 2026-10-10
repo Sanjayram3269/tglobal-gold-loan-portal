@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 import AssistantWidget from './AssistantWidget'
 
@@ -62,8 +62,8 @@ function App() {
   const [net, setNet] = useState('45')
   const [gross, setGross] = useState('50')
   const [karat, setKarat] = useState('22')
-  const [quote, setQuote] = useState<Quote | null>(null)
   const [quotesByScheme, setQuotesByScheme] = useState<Record<string, Quote>>({})
+  const [quotesInputKey, setQuotesInputKey] = useState('')
   const [application, setApplication] = useState<Application | null>(null)
   const [step, setStep] = useState(1)
   const [loadingSchemes, setLoadingSchemes] = useState(true)
@@ -86,8 +86,10 @@ function App() {
       .then((data) => {
         const plans = Array.isArray(data) ? data : data.schemes ?? data.data ?? []
         setSchemes(plans)
-        if (plans.length && !plans.some((p: Scheme) => p.id === schemeId)) {
-          setSchemeId(plans[0].id)
+        if (plans.length) {
+          setSchemeId((current) =>
+            plans.some((plan: Scheme) => plan.id === current) ? current : plans[0].id,
+          )
         }
       })
       .catch(() => setError('Unable to connect to the loan service. Check that the API is running on port 4000.'))
@@ -97,8 +99,6 @@ function App() {
   useEffect(() => {
     if (!showAdmin) return
     let active = true
-    setLeadsLoading(true)
-    setLeadsError('')
     fetch(`${API}/api/v1/leads`)
       .then(async (response) => {
         if (!response.ok) throw new Error('Unable to load applications.')
@@ -117,13 +117,10 @@ function App() {
   }, [showAdmin])
 
   useEffect(() => {
-    if (!net || !gross || !karat || !schemes.length) {
-      setQuote(null)
-      setQuotesByScheme({})
-      return
-    }
+    if (!net || !gross || !karat || !schemes.length) return
 
     let active = true
+    const inputKey = [net, gross, karat].join('|')
     const timer = window.setTimeout(async () => {
       setQuoting(true)
       try {
@@ -147,12 +144,9 @@ function App() {
           (item): item is NonNullable<typeof item> => item !== null,
         ))
         setQuotesByScheme(nextQuotes)
-        setQuote(nextQuotes[schemeId] ?? null)
+        setQuotesInputKey(inputKey)
       } catch {
-        if (active) {
-          setQuote(null)
-          setQuotesByScheme({})
-        }
+        // The displayed quote is derived from the last successful input key.
       } finally {
         if (active) setQuoting(false)
       }
@@ -163,6 +157,10 @@ function App() {
       window.clearTimeout(timer)
     }
   }, [net, gross, karat, schemeId, schemes])
+
+  const quote = quotesInputKey === [net, gross, karat].join('|')
+    ? quotesByScheme[schemeId] ?? null
+    : null
 
   const selectedScheme = useMemo(
     () => schemes.find((scheme) => scheme.id === schemeId),
@@ -246,7 +244,11 @@ function App() {
         <nav className="header-nav">
           <a href="#how-it-works">How it works</a>
           <a href="#loan-plans">Loan plans</a>
-          <a href="#applications" onClick={() => setShowAdmin(true)}>Applications</a>
+          <a href="#applications" onClick={() => {
+            setLeadsLoading(true)
+            setLeadsError('')
+            setShowAdmin(true)
+          }}>Applications</a>
           <a className="header-cta" href="#apply">Get a quote <span>↗</span></a>
         </nav>
       </header>
@@ -505,7 +507,11 @@ function App() {
       <footer className="site-footer">
         <a className="brand footer-brand" href="#"><span className="brand-mark">T</span><span>TGLOBAL<span className="brand-sub">GOLD LOANS</span></span></a>
         <p>Clear estimates. Informed decisions.</p>
-        <a href="#applications" onClick={() => setShowAdmin(true)}>Demo applications</a>
+        <a href="#applications" onClick={() => {
+          setLeadsLoading(true)
+          setLeadsError('')
+          setShowAdmin(true)
+        }}>Demo applications</a>
         <span>© {new Date().getFullYear()} TGlobal · Demo experience</span>
       </footer>
     </div>
