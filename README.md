@@ -6,9 +6,9 @@ A full-stack gold-loan intake demo built for the TGlobal Full-Stack Developer In
 
 ## Submission status
 
-- **Core application:** implemented and manually exercised end to end.
-- **Automated verification:** latest local run passed **36/36 tests across four Vitest files**; API TypeScript build and frontend TypeScript/Vite production build both passed after a fresh npm ci.
-- **GitHub CI:** [Run #34 passed](https://github.com/Sanjayram3269/tglobal-gold-loan-portal/actions/runs/38037015978) for commit a31e7f27d49a14c018e26ab1aa0660edfc334962.
+- **Core application:** implemented and manually exercised end to end, including Idempotency-Key replay with opt-in retention cleanup, a lead status workflow with a durable audit log, and a cached mock gold-rate endpoint.
+- **Automated verification:** latest local run passed **72/72 tests across six Vitest files**; lint and API TypeScript/frontend TypeScript-Vite production builds passed; npm audit reports 0 vulnerabilities.
+- **GitHub CI:** the workflow passes API tests and production builds on every push to main; the latest pinned green run is recorded at the bottom of this README and in [AI_LOG.md](AI_LOG.md).
 - **AI conversation checks:** five required scenarios and four additional manual scenarios are recorded in [docs/AI_EVALUATIONS.md](docs/AI_EVALUATIONS.md). These are manual observations, not automated live-model CI tests.
 - **Submission files:** this README, [AI_LOG.md](AI_LOG.md), [.env.example](.env.example), migrations/seed, tests, and GitHub Actions workflow are included.
 - **Bonus scope and limitations:** see [Bonus scope](#bonus-scope) and [Known limitations](#known-limitations).
@@ -87,8 +87,10 @@ Base path: /api/v1
 |---|---|---|
 | GET | /loan-schemes | Return available seeded schemes |
 | POST | /quotes | Validate input and calculate an estimate without writing a lead |
-| POST | /leads | Revalidate, recalculate, check duplicates, and create a SUBMITTED lead |
+| POST | /leads | Revalidate, recalculate, check duplicates, and create a SUBMITTED lead; returns a top-level `applicationId` alongside the existing response shape |
 | GET | /leads | List newest applications first with mobile numbers masked |
+| PATCH | /leads/:id/status | Move a lead through the status workflow; writes an audit record atomically |
+| GET | /gold-rate | Return the cached mock gold rate (5-minute TTL) with cache metadata |
 | POST | /assistant/chat | Run the tool-using assistant |
 | POST | /assistant/confirm | Submit a prepared application after explicit confirmation |
 
@@ -99,7 +101,7 @@ Base path: /api/v1
 - Weights: 0 < net ≤ gross ≤ 1000g.
 - Karat: 18, 22, or 24.
 - Unknown plan: 404; invalid input: 400; duplicate mobile within seven days: 409.
-- Successful lead creation: 201 with an application reference.
+- Successful lead creation: 201 with a top-level `applicationId` and the existing `application` object (kept for compatibility).
 - Errors return a consistent error object with code, message, and fields, plus a top-level message for simple clients.
 - Quote endpoint does not create a lead; the server recomputes the quote during submission.
 - Transaction-scoped PostgreSQL advisory locking protects the seven-day duplicate check against concurrent requests.
@@ -154,6 +156,34 @@ Cleanup is an explicit, opt-in maintenance command that is disabled by default a
 
 The purge selects records older than the cutoff through the `IdempotencyRecord_createdAt_idx` index (added by an additive migration) in ascending age order, capped by `--limit`, so each run performs a small bounded delete that is safe to repeat or run concurrently.
 
+### Lead status workflow and audit log
+
+PATCH /api/v1/leads/:id/status moves a lead through an explicit, server-enforced workflow, and every accepted transition is recorded in an append-only `LeadStatusHistory` table.
+
+Allowed transitions (anything else is rejected):
+
+- `SUBMITTED` → `UNDER_REVIEW`
+- `UNDER_REVIEW` → `APPROVED` or `REJECTED`
+- `APPROVED` and `REJECTED` are terminal.
+
+Behavior:
+
+- The status update and its audit row (`leadId`, `fromStatus`, `toStatus`, `createdAt`) commit in the same PostgreSQL transaction, so history can never show a transition that was not applied, or an applied one not recorded. Audit rows are only inserted, never updated or deleted.
+- Transitions for the same lead are serialized with a transaction-scoped advisory lock, so two concurrent identical requests produce one success and one 409, with exactly one audit row.
+- Unknown application id: 404 `LEAD_NOT_FOUND`; invalid or unknown `toStatus`: 400 `VALIDATION_ERROR`; a known status that is not reachable from the current one: 409 `INVALID_TRANSITION` with `currentStatus` and `allowedTransitions`.
+- The demo applications dashboard filters leads by status in addition to plan.
+- The migration is additive; existing leads keep their current `SUBMITTED` status and no history rows are backfilled for them.
+
+Example request:
+
+    curl -X PATCH http://localhost:4000/api/v1/leads/<application-id>/status \
+      -H "Content-Type: application/json" \
+      -d '{"toStatus":"UNDER_REVIEW"}'
+
+### Cached mock gold rate
+
+GET /api/v1/gold-rate returns the portal's configured reference rate (`ratePerGramRupees: 7000`, `source: "mock-reference"`, `currency: "INR"`) behind an explicit 5-minute in-process TTL cache. The response includes `cache.hit`, `cache.ttlSeconds`, and `expiresAt`; repeated reads inside the TTL are served from memory. This is mock data derived from the same constant the quote calculator uses — there is no live market feed. The borrower portal's rate card reads this endpoint and falls back to the previous hardcoded value when the API is unreachable.
+
 ## Local setup
 
 ### Prerequisites
@@ -204,7 +234,7 @@ Never place secrets in variables prefixed with VITE_: Vite embeds those values i
     npm run build
     npm run lint
 
-**Latest local verification:** npm test passed 60 tests across five files; npm run build passed for API and frontend; npm run lint passed; npm audit reported 0 vulnerabilities; prisma validate, prisma generate, and prisma migrate status all passed against PostgreSQL 17. CI runs API tests and production builds; it does not run live-model evaluations or provision a fresh PostgreSQL service.
+**Latest local verification (2026-10-10):** npm test passed 72 tests across six files; npm run build passed for API and frontend; npm run lint passed; npm audit reported 0 vulnerabilities; prisma validate, prisma generate, and prisma migrate status all passed against PostgreSQL 17 (four applied migrations, schema up to date). CI runs API tests and production builds; it does not run live-model evaluations or provision a fresh PostgreSQL service.
 
 See:
 - [AI evaluation results](docs/AI_EVALUATIONS.md)
@@ -217,6 +247,9 @@ See:
 The assignment makes bonuses optional and says they do not replace required work. Implemented and manually checked in this project:
 
 - **Concurrency-safe duplicate protection:** PostgreSQL transaction-scoped advisory locks protect concurrent requests for the same mobile.
+- **Idempotency-Key replay:** POST /leads persists response fingerprints in PostgreSQL; retries replay byte-identical responses, mismatched reuse is rejected, and an opt-in bounded retention cleanup command purges old records safely.
+- **Lead status workflow with audit log:** explicit transitions enforced server-side, recorded atomically in an append-only history table with per-lead advisory locking.
+- **Cached gold-rate endpoint:** the mock reference rate is served through an explicit 5-minute TTL cache with deterministic cache tests.
 - **Single-use confirmation:** confirmation tokens expire after ten minutes and are consumed before the database write; unit tests cover replay attempts.
 - **Prompt-injection handling and multilingual conversation:** manual checks for prompt injection and Hinglish are recorded in the evaluation report.
 - **Change-mind flow:** cancelling at the review step leaves the lead count unchanged, per manual test.
@@ -224,9 +257,6 @@ The assignment makes bonuses optional and says they do not replace required work
 
 Not implemented or not claimed as complete:
 
-- Idempotency-Key replay semantics for POST /leads.
-- A lead status-transition workflow with a durable audit log.
-- Cached gold-rate endpoint.
 - Fourth check_existing_application tool.
 - Streaming assistant responses and visible tool-status chips.
 - Ten-plus automated live-model evaluations or an npm run eval runner.
@@ -242,7 +272,7 @@ Not implemented or not claimed as complete:
 - Admin list endpoint is unauthenticated; do not use with real applicant information.
 - Confirmation tokens are stored in process memory, expire after ten minutes, and are lost on restart. This is not durable across multiple API instances.
 - Live-model evaluations are manual observations and are not part of CI.
-- The latest npm ci reported **five high-severity npm audit findings**. The build and tests pass, but the dependency advisories have not been fully investigated. Avoid npm audit fix --force; review the audit details and make compatible updates separately before production use.
+- `npm audit` reports 0 vulnerabilities as of 2026-10-10; the documented `overrides` pin Prisma-related packages to adapter-backported patch releases. Review audit details again before any production deployment.
 
 ## Repository structure
 
@@ -252,8 +282,8 @@ Not implemented or not claimed as complete:
     │   ├── api/
     │   │   ├── prisma/              # Schema, migration and seed
     │   │   ├── src/domain/          # Financial calculator
-    │   │   ├── src/services/        # Assistant and confirmation flow
-    │   │   └── tests/               # Four Vitest files in total
+    │   │   ├── src/services/        # Assistant, confirmation, gold-rate cache
+    │   │   └── tests/               # Six Vitest files in total
     │   └── web/src/                 # React portal and assistant widget
     ├── ARCHITECTURE.md
     ├── docs/AI_EVALUATIONS.md
@@ -266,10 +296,10 @@ Not implemented or not claimed as complete:
 
 - [x] Core API, calculation, persistence, borrower form, assistant, and applications view.
 - [x] Server-side validation, scheme lookup, duplicate rejection, masked mobile numbers, and explicit AI confirmation.
-- [x] Unit/HTTP tests; latest local result: 36/36 passing.
+- [x] Unit/HTTP tests; latest local result: 72/72 passing across six files.
 - [x] API and frontend production builds pass locally.
 - [x] .env.example, AI_LOG.md, AI evaluation report, Prisma migration/seed, and CI workflow committed.
 - [x] Required and bonus manual conversation scenarios recorded in AI_EVALUATIONS.md.
-- [x] Latest verified GitHub Actions run passed on commit a31e7f2.
-- [ ] Review/fix the five high-severity dependency audit findings before any production deployment.
-- [ ] Add authentication, rate limiting, durable confirmation state, and monitoring before production use.
+- [x] Idempotency-Key replay, lead status workflow with audit log, and cached gold-rate endpoint implemented with tests.
+- [x] npm audit reports 0 vulnerabilities (Prisma advisories addressed via documented version overrides).
+- [ ] Add authentication, rate limiting, and monitoring before production use.

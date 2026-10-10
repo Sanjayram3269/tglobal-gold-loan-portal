@@ -27,7 +27,7 @@
 
 ## Automated verification
 
-- Local verification on 2026-10-10: 60/60 tests passed across five Vitest files; lint, API and frontend production builds, `npm audit` (0 vulnerabilities), and Prisma validate/generate/migrate status all passed.
+- Local verification on 2026-10-10: 72/72 tests passed across six Vitest files; lint, API and frontend production builds, `npm audit` (0 vulnerabilities), and Prisma validate/generate/migrate status (four applied migrations) all passed.
 - GitHub Actions run #45 passed for commit eab6bba6c575d3862ecbf31781177e0096acf489.
 - These conversation evaluations are manual observations, not automated live-model tests; CI does not call the live model or provision a fresh PostgreSQL service.
 
