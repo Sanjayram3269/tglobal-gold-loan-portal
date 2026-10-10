@@ -75,6 +75,8 @@ function App() {
   const [leadsLoading, setLeadsLoading] = useState(true)
   const [leadsError, setLeadsError] = useState('')
   const [leadPlanFilter, setLeadPlanFilter] = useState('ALL')
+  const [leadStatusFilter, setLeadStatusFilter] = useState('ALL')
+  const [goldRateLabel, setGoldRateLabel] = useState('7,000')
   const [showAdmin, setShowAdmin] = useState(false)
 
   useEffect(() => {
@@ -94,6 +96,23 @@ function App() {
       })
       .catch(() => setError('Unable to connect to the loan service. Check that the API is running on port 4000.'))
       .finally(() => setLoadingSchemes(false))
+  }, [])
+
+  useEffect(() => {
+    fetch(`${API}/api/v1/gold-rate`)
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Unable to load gold rate.')
+        return response.json()
+      })
+      .then((data) => {
+        const rate = data?.goldRate?.ratePerGramRupees
+        if (typeof rate === 'number' && Number.isFinite(rate)) {
+          setGoldRateLabel(rate.toLocaleString('en-IN'))
+        }
+      })
+      .catch(() => {
+        // Keep the illustrative fallback when the API is unreachable.
+      })
   }, [])
 
   useEffect(() => {
@@ -281,7 +300,7 @@ function App() {
             </div>
             <div className="floating-card">
               <div className="floating-card-top"><span className="gold-mini">✳</span><span>GOLD RATE / GRAM</span><span className="live-dot" /></div>
-              <strong>₹7,000</strong>
+              <strong>₹{goldRateLabel}</strong>
               <small>Illustrative 24K reference rate</small>
             </div>
             <div className="hero-index">PRECISION · TRANSPARENCY · TRUST</div>
@@ -454,6 +473,14 @@ function App() {
                 <option value="ALL">All plans</option>
                 {schemes.map((scheme) => <option key={scheme.id} value={scheme.id}>{scheme.name}</option>)}
               </select>
+              <label htmlFor="lead-status-filter">Filter by status</label>
+              <select id="lead-status-filter" value={leadStatusFilter} onChange={(event) => setLeadStatusFilter(event.target.value)}>
+                <option value="ALL">All statuses</option>
+                <option value="SUBMITTED">Submitted</option>
+                <option value="UNDER_REVIEW">Under review</option>
+                <option value="APPROVED">Approved</option>
+                <option value="REJECTED">Rejected</option>
+              </select>
               <button type="button" className="secondary-button" onClick={() => setShowAdmin(false)}>Close</button>
               <button type="button" className="secondary-button" onClick={() => {
                 setLeadsLoading(true)
@@ -476,9 +503,9 @@ function App() {
               <tbody>
                 {leadsLoading ? (
                   <tr><td colSpan={7}>Loading applications…</td></tr>
-                ) : leads.filter((lead) => leadPlanFilter === 'ALL' || lead.schemeId === leadPlanFilter).length === 0 ? (
+                ) : leads.filter((lead) => (leadPlanFilter === 'ALL' || lead.schemeId === leadPlanFilter) && (leadStatusFilter === 'ALL' || lead.status === leadStatusFilter)).length === 0 ? (
                   <tr><td colSpan={7}>No applications match this filter.</td></tr>
-                ) : leads.filter((lead) => leadPlanFilter === 'ALL' || lead.schemeId === leadPlanFilter).map((lead) => (
+                ) : leads.filter((lead) => (leadPlanFilter === 'ALL' || lead.schemeId === leadPlanFilter) && (leadStatusFilter === 'ALL' || lead.status === leadStatusFilter)).map((lead) => (
                   <tr key={lead.id}>
                     <td><strong>{lead.name}</strong><small>{lead.id}</small></td>
                     <td>{lead.mobile}</td>
